@@ -9,6 +9,7 @@ import (
 
 	"github.com/deroproject/derohe/block"
 	"github.com/deroproject/derohe/rpc"
+	"github.com/deroproject/derohe/globals"
 )
 
 func edit_blob(input []byte) (output []byte) {
@@ -44,6 +45,8 @@ func edit_blob(input []byte) (output []byte) {
             panic(err)
         }
 	mbl.Flags = uint32(val)
+	timestamp := uint64(globals.Time().UTC().UnixMilli())
+	mbl.Timestamp = uint16(timestamp) // this will help us better understand network conditions 
 
 	params.Blockhashing_blob = fmt.Sprintf("%x", mbl.Serialize())
 	encoder := json.NewEncoder(&out)
