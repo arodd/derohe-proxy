@@ -2,14 +2,15 @@ package proxy
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"crypto/rand"
+	"github.com/deroproject/derohe/globals"
 
 	"github.com/deroproject/derohe/block"
 	"github.com/deroproject/derohe/rpc"
-	"github.com/deroproject/derohe/globals"
 )
 
 func edit_blob(input []byte) (output []byte) {
@@ -18,7 +19,6 @@ func edit_blob(input []byte) (output []byte) {
 	var mbl block.MiniBlock
 	var raw_hex []byte
 	var out bytes.Buffer
-	var val int
 
 	if err = json.Unmarshal(input, &params); err != nil {
 		return
@@ -34,23 +34,19 @@ func edit_blob(input []byte) (output []byte) {
 	key := [4]byte{}
 
 	for i := range mbl.Nonce {
-		val, err = rand.Read(key[:])
-		if err != nil {
-		    panic(err)
-		}
-		mbl.Nonce[i] = uint32(val)
+		rand.Read(key[:])
+		mbl.Nonce[i] = binary.LittleEndian.Uint32(key[:])
 	}
-	val, err = rand.Read(key[:])
-	if err != nil {
-            panic(err)
-        }
-	mbl.Flags = uint32(val)
+
+	rand.Read(key[:])
+	mbl.Flags = binary.LittleEndian.Uint32(key[:])
+
 	timestamp := uint64(globals.Time().UTC().UnixMilli())
-	mbl.Timestamp = uint16(timestamp) // this will help us better understand network conditions 
+	mbl.Timestamp = uint16(timestamp) // this will help us better understand network conditions
 
 	params.Blockhashing_blob = fmt.Sprintf("%x", mbl.Serialize())
 	encoder := json.NewEncoder(&out)
-
+	//fmt.Println("Nonces:", mbl.Nonce[0], mbl.Nonce[1], mbl.Nonce[2], "Flags:", mbl.Flags)
 	if err = encoder.Encode(params); err != nil {
 		return
 	}
