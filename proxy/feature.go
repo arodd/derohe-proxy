@@ -2,14 +2,13 @@ package proxy
 
 import (
 	"bytes"
-	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/deroproject/derohe/globals"
-
+	"github.com/bitfield/qrand"
 	"github.com/deroproject/derohe/block"
+	"github.com/deroproject/derohe/globals"
 	"github.com/deroproject/derohe/rpc"
 )
 
@@ -34,11 +33,11 @@ func edit_blob(input []byte) (output []byte) {
 	key := [4]byte{}
 
 	for i := range mbl.Nonce {
-		rand.Read(key[:])
+		qrand.Read(key[:])
 		mbl.Nonce[i] = binary.LittleEndian.Uint32(key[:])
 	}
 
-	rand.Read(key[:])
+	qrand.Read(key[:])
 	mbl.Flags = binary.LittleEndian.Uint32(key[:])
 
 	timestamp := uint64(globals.Time().UTC().UnixMilli())

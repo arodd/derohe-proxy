@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"github.com/lesismal/nbio/nbhttp/websocket"
 	"math/big"
 	"net/http"
 	"runtime"
@@ -20,7 +21,6 @@ import (
 	"github.com/lesismal/llib/std/crypto/tls"
 	"github.com/lesismal/nbio"
 	"github.com/lesismal/nbio/nbhttp"
-	"github.com/lesismal/nbio/nbhttp/websocket"
 )
 
 var server *nbhttp.Server
