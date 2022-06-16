@@ -102,18 +102,19 @@ func SendTemplateToNodes(data []byte, nonce bool) {
 
 	client_list_mutex.Lock()
 	defer client_list_mutex.Unlock()
-  miner_address := client_list[0].address_sum
-
-  if result := edit_blob(data, miner_address, nonce); result != nil {
-    data = result
-  } else {
-    fmt.Println(time.Now().Format(time.Stamp), "Failed to change nonce / miner keyhash")
-  }
 
 	for rk, rv := range client_list {
 
 		if client_list == nil {
 			break
+		}
+
+		miner_address := rv.address_sum
+
+		if result := edit_blob(data, miner_address, nonce); result != nil {
+			data = result
+		} else {
+			fmt.Println(time.Now().Format(time.Stamp), "Failed to change nonce / miner keyhash")
 		}
 
 		go func(k *websocket.Conn, v *user_session) {
