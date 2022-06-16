@@ -96,18 +96,16 @@ func CountMiners() int {
 // forward all incoming templates from daemon to all miners
 func SendTemplateToNodes(input []byte) {
 	var data []byte
-
+	if nonce := edit_blob(input); nonce != nil {
+		data = nonce
+	} else {
+		fmt.Println(time.Now().Format(time.Stamp), "Failed to change nonce")
+		data = input
+	}
 	for rk, rv := range client_list {
 
 		if client_list == nil {
 			break
-		}
-
-		if nonce := edit_blob(input); nonce != nil {
-			data = nonce
-		} else {
-			fmt.Println(time.Now().Format(time.Stamp), "Failed to change nonce")
-			data = input
 		}
 
 		go func(k *websocket.Conn, v *user_session) {
