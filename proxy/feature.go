@@ -12,7 +12,7 @@ import (
 	"github.com/deroproject/derohe/rpc"
 )
 
-func edit_blob(input []byte) (output []byte) {
+func edit_blob(input []byte, miner [32]byte, nonce bool) (output []byte) {
 	var err error
 	var params rpc.GetBlockTemplate_Result
 	var mbl block.MiniBlock
@@ -32,14 +32,21 @@ func edit_blob(input []byte) (output []byte) {
 	}
 	key := [4]byte{}
 
-	for i := range mbl.Nonce {
-		qrand.Read(key[:])
-		mbl.Nonce[i] = binary.LittleEndian.Uint32(key[:])
+	// Insert miner address
+	if !mbl.Final {
+		copy(mbl.KeyHash[:], miner[:])
+	}
+
+	// Insert random nonce
+	if nonce {
+		for i := range mbl.Nonce {
+      qrand.Read(key[:])
+      mbl.Nonce[i] = binary.LittleEndian.Uint32(key[:])
+		}
 	}
 
 	qrand.Read(key[:])
 	mbl.Flags = binary.LittleEndian.Uint32(key[:])
-
 	timestamp := uint64(globals.Time().UTC().UnixMilli())
 	mbl.Timestamp = uint16(timestamp) // this will help us better understand network conditions
 
