@@ -2,12 +2,13 @@ package proxy
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math/rand"
-
+	"github.com/bitfield/qrand"
 	"github.com/deroproject/derohe/block"
+	"github.com/deroproject/derohe/globals"
 	"github.com/deroproject/derohe/rpc"
 )
 
@@ -29,6 +30,7 @@ func edit_blob(input []byte, miner [32]byte, nonce bool) (output []byte) {
 	if mbl.Deserialize(raw_hex); err != nil {
 		return
 	}
+	key := [4]byte{}
 
 	// Insert miner address
 	if !mbl.Final {
@@ -38,15 +40,19 @@ func edit_blob(input []byte, miner [32]byte, nonce bool) (output []byte) {
 	// Insert random nonce
 	if nonce {
 		for i := range mbl.Nonce {
-			mbl.Nonce[i] = rand.Uint32()
+      qrand.Read(key[:])
+      mbl.Nonce[i] = binary.LittleEndian.Uint32(key[:])
 		}
 	}
 
-	mbl.Flags = 3735928559 // ;)
+	qrand.Read(key[:])
+	mbl.Flags = binary.LittleEndian.Uint32(key[:])
+	timestamp := uint64(globals.Time().UTC().UnixMilli())
+	mbl.Timestamp = uint16(timestamp) // this will help us better understand network conditions
 
 	params.Blockhashing_blob = fmt.Sprintf("%x", mbl.Serialize())
 	encoder := json.NewEncoder(&out)
-
+	//fmt.Println("Nonces:", mbl.Nonce[0], mbl.Nonce[1], mbl.Nonce[2], "Flags:", mbl.Flags)
 	if err = encoder.Encode(params); err != nil {
 		return
 	}

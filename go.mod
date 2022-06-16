@@ -13,6 +13,7 @@ require (
 )
 
 require (
+	github.com/bitfield/qrand v0.2.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/caarlos0/env/v6 v6.9.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
