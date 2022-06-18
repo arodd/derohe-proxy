@@ -36,6 +36,7 @@ func edit_blob(input []byte, miner [32]byte, nonce bool, verbose bool, noncedata
 
 	// Insert random nonce
 	if nonce {
+
 		for i := range mbl.Nonce {
 			mbl.Nonce[i] = noncedata[i]
 		}

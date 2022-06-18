@@ -104,23 +104,33 @@ func SendTemplateToNodes(data []byte, nonce bool, verbose bool) {
 
 	client_list_mutex.Lock()
 	defer client_list_mutex.Unlock()
-	key := [4]byte{}
 	var noncedata [3]uint32
+	randomdata := make([]byte, 1024)
 	var flags uint32
 	flags = 3735928559
+	qrand.Read(randomdata[:])
+	random_chunks := RandomChunks(randomdata, 8)
 	if nonce {
-		for i := range noncedata {
-			qrand.Read(key[:])
-			noncedata[i] = binary.LittleEndian.Uint32(key[:])
-		}
-		qrand.Read(key[:])
-		flags = binary.LittleEndian.Uint32(key[:])
-	}
+		noncedata[0] = random_chunks[0]
+		noncedata[1] = random_chunks[1]
+		noncedata[2] = 0
+		flags = random_chunks[2]
 
+	}
+	//fmt.Println(client_nonces)
+	var i = int(3)
 	for rk, rv := range client_list {
 
 		if client_list == nil {
 			break
+		}
+		if nonce {
+			if i < 125 {
+				noncedata[2] = random_chunks[i]
+			} else {
+				noncedata[2] = 0
+			}
+
 		}
 
 		miner_address := rv.address_sum
@@ -130,16 +140,34 @@ func SendTemplateToNodes(data []byte, nonce bool, verbose bool) {
 		} else {
 			fmt.Println(time.Now().Format(time.Stamp), "Failed to change nonce / miner keyhash")
 		}
-
+		i++
 		go func(k *websocket.Conn, v *user_session) {
 			defer globals.Recover(2)
 			k.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
 			k.WriteMessage(websocket.TextMessage, data)
 
 		}(rk, rv)
-
 	}
 
+}
+
+func RandomChunks(random_blob []byte, chunk_size int) []uint32 {
+	var chunks []uint32
+	for {
+		if len(random_blob) == 0 {
+			break
+		}
+
+		// necessary check to avoid slicing beyond
+		// slice capacity
+		if len(random_blob) < chunk_size {
+			chunk_size = len(random_blob)
+		}
+
+		chunks = append(chunks, binary.BigEndian.Uint32(random_blob[0:chunk_size]))
+		random_blob = random_blob[chunk_size:]
+	}
+	return chunks
 }
 
 // handling for incoming miner connections
