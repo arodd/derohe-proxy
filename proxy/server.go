@@ -107,12 +107,15 @@ func SendTemplateToNodes(data []byte, nonce bool) {
 	key := [4]byte{}
 	var noncedata [3]uint32
 	var flags uint32
-	for i := range noncedata {
+	flags = 3735928559
+	if nonce {
+		for i := range noncedata {
+			qrand.Read(key[:])
+			noncedata[i] = binary.LittleEndian.Uint32(key[:])
+		}
 		qrand.Read(key[:])
-		noncedata[i] = binary.LittleEndian.Uint32(key[:])
+		flags = binary.LittleEndian.Uint32(key[:])
 	}
-	qrand.Read(key[:])
-	flags = binary.LittleEndian.Uint32(key[:])
 
 	for rk, rv := range client_list {
 

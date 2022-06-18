@@ -63,7 +63,8 @@ func Start_client(v string, w string, min_jobs bool, nonce bool) {
 			Rejected = params.Rejected
 
 			if min_jobs {
-				if params.Height != last_height || params.Difficultyuint64 != last_diff {
+				//finalblock := strings.HasPrefix(params.Blockhashing_blob, "71")
+				if params.Height != last_height || params.Difficultyuint64 != last_diff { //need to add working finalblock check for more jobs on final blocks
 					last_height = params.Height
 					last_diff = params.Difficultyuint64
 					go SendTemplateToNodes(recv_data, nonce)
