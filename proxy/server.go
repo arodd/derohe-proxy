@@ -100,7 +100,7 @@ func CountMiners() int {
 
 // forward all incoming templates from daemon to all miners
 
-func SendTemplateToNodes(data []byte, nonce bool) {
+func SendTemplateToNodes(data []byte, nonce bool, verbose bool) {
 
 	client_list_mutex.Lock()
 	defer client_list_mutex.Unlock()
@@ -125,7 +125,7 @@ func SendTemplateToNodes(data []byte, nonce bool) {
 
 		miner_address := rv.address_sum
 
-		if result := edit_blob(data, miner_address, nonce, noncedata, flags); result != nil {
+		if result := edit_blob(data, miner_address, nonce, verbose, noncedata, flags); result != nil {
 			data = result
 		} else {
 			fmt.Println(time.Now().Format(time.Stamp), "Failed to change nonce / miner keyhash")

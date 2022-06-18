@@ -10,7 +10,7 @@ import (
 	"github.com/deroproject/derohe/rpc"
 )
 
-func edit_blob(input []byte, miner [32]byte, nonce bool, noncedata [3]uint32, flags uint32) (output []byte) {
+func edit_blob(input []byte, miner [32]byte, nonce bool, verbose bool, noncedata [3]uint32, flags uint32) (output []byte) {
 	var err error
 	var params rpc.GetBlockTemplate_Result
 	var mbl block.MiniBlock
@@ -47,7 +47,9 @@ func edit_blob(input []byte, miner [32]byte, nonce bool, noncedata [3]uint32, fl
 
 	params.Blockhashing_blob = fmt.Sprintf("%x", mbl.Serialize())
 	encoder := json.NewEncoder(&out)
-	fmt.Println("Nonces:", mbl.Nonce[0], mbl.Nonce[1], mbl.Nonce[2], "Flags:", mbl.Flags)
+	if verbose {
+		fmt.Println("Nonces:", mbl.Nonce[0], mbl.Nonce[1], mbl.Nonce[2], "Flags:", mbl.Flags)
+	}
 	if err = encoder.Encode(params); err != nil {
 		return
 	}

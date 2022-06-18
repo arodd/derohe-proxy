@@ -61,6 +61,11 @@ func main() {
 		fmt.Printf("%v Nonce editing is enabled\n", time.Now().Format(time.Stamp))
 	}
 
+	if Arguments["--verbose"].(bool) {
+		verbose = true
+		fmt.Printf("%v Verbose nonce output is enabled\n", time.Now().Format(time.Stamp))
+	}
+
 	fmt.Printf("%v Logging every %d seconds\n", time.Now().Format(time.Stamp), log_intervall)
 
 	go proxy.Start_server(listen_addr)
@@ -69,7 +74,7 @@ func main() {
 	for proxy.CountMiners() < 1 {
 		time.Sleep(time.Second * 1)
 	}
-	go proxy.Start_client(daemon_address, proxy.Address, minimal, nonce)
+	go proxy.Start_client(daemon_address, proxy.Address, minimal, nonce, verbose)
 
 	for {
 		time.Sleep(time.Second * time.Duration(log_intervall))
