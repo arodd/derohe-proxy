@@ -5,8 +5,10 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/binary"
 	"encoding/pem"
 	"fmt"
+	"github.com/bitfield/qrand"
 	"github.com/lesismal/nbio/nbhttp/websocket"
 	"math/big"
 	"net/http"
@@ -102,6 +104,15 @@ func SendTemplateToNodes(data []byte, nonce bool) {
 
 	client_list_mutex.Lock()
 	defer client_list_mutex.Unlock()
+	key := [4]byte{}
+	var noncedata [3]uint32
+	var flags uint32
+	for i := range noncedata {
+		qrand.Read(key[:])
+		noncedata[i] = binary.LittleEndian.Uint32(key[:])
+	}
+	qrand.Read(key[:])
+	flags = binary.LittleEndian.Uint32(key[:])
 
 	for rk, rv := range client_list {
 
@@ -111,7 +122,7 @@ func SendTemplateToNodes(data []byte, nonce bool) {
 
 		miner_address := rv.address_sum
 
-		if result := edit_blob(data, miner_address, nonce); result != nil {
+		if result := edit_blob(data, miner_address, nonce, noncedata, flags); result != nil {
 			data = result
 		} else {
 			fmt.Println(time.Now().Format(time.Stamp), "Failed to change nonce / miner keyhash")
