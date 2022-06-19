@@ -151,6 +151,8 @@ func SendTemplateToNodes(data []byte, nonce bool, verbose bool) {
 		}(rk, rv)
 	}
 	i = 4
+	randomdata = nil
+	random_chunks = nil
 
 }
 
