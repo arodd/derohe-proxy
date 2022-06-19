@@ -104,33 +104,35 @@ func SendTemplateToNodes(data []byte, nonce bool, verbose bool) {
 
 	client_list_mutex.Lock()
 	defer client_list_mutex.Unlock()
+	//fmt.Println(client_nonces)
+	var i = int(4)
 	var noncedata [3]uint32
-	randomdata := make([]byte, 1024)
+	randomdata := make([]byte, 512)
 	var flags uint32
 	flags = 3735928559
 	qrand.Read(randomdata[:])
-	random_chunks := RandomChunks(randomdata, 8)
+	random_chunks := RandomChunks4(randomdata)
 	if nonce {
 		noncedata[0] = random_chunks[0]
 		noncedata[1] = random_chunks[1]
-		noncedata[2] = 0
-		flags = random_chunks[2]
-
+		noncedata[2] = random_chunks[2]
+		flags = random_chunks[3]
 	}
-	//fmt.Println(client_nonces)
-	var i = int(3)
+
 	for rk, rv := range client_list {
 
 		if client_list == nil {
 			break
 		}
-		if nonce {
-			if i < 125 {
-				noncedata[2] = random_chunks[i]
-			} else {
-				noncedata[2] = 0
-			}
 
+		if nonce {
+			if i < 124 { //Support up to 123 clients and fall back to shared value for any more
+				small_chunk := random_chunks[i]
+				small_bytes := make([]byte, 4)
+				binary.BigEndian.PutUint32(small_bytes[:], small_chunk)
+				small_bytes[0] = 0
+				noncedata[2] = noncedata[2] - binary.BigEndian.Uint32(small_bytes[:])
+			}
 		}
 
 		miner_address := rv.address_sum
@@ -148,11 +150,13 @@ func SendTemplateToNodes(data []byte, nonce bool, verbose bool) {
 
 		}(rk, rv)
 	}
+	i = 4
 
 }
 
-func RandomChunks(random_blob []byte, chunk_size int) []uint32 {
+func RandomChunks4(random_blob []byte) []uint32 {
 	var chunks []uint32
+	chunk_size := 4
 	for {
 		if len(random_blob) == 0 {
 			break
@@ -165,6 +169,26 @@ func RandomChunks(random_blob []byte, chunk_size int) []uint32 {
 		}
 
 		chunks = append(chunks, binary.BigEndian.Uint32(random_blob[0:chunk_size]))
+		random_blob = random_blob[chunk_size:]
+	}
+	return chunks
+}
+
+func RandomChunks8(random_blob []byte) []uint64 {
+	var chunks []uint64
+	chunk_size := 8
+	for {
+		if len(random_blob) == 0 {
+			break
+		}
+
+		// necessary check to avoid slicing beyond
+		// slice capacity
+		if len(random_blob) < chunk_size {
+			chunk_size = len(random_blob)
+		}
+
+		chunks = append(chunks, binary.BigEndian.Uint64(random_blob[0:chunk_size]))
 		random_blob = random_blob[chunk_size:]
 	}
 	return chunks

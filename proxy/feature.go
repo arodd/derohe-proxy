@@ -49,7 +49,8 @@ func edit_blob(input []byte, miner [32]byte, nonce bool, verbose bool, noncedata
 	params.Blockhashing_blob = fmt.Sprintf("%x", mbl.Serialize())
 	encoder := json.NewEncoder(&out)
 	if verbose {
-		fmt.Println("Nonces:", mbl.Nonce[0], mbl.Nonce[1], mbl.Nonce[2], "Flags:", mbl.Flags)
+		line := fmt.Sprintf("Height: %d Difficulty: %s Work %08x%08x%08x%08x", params.Height, params.Difficulty, mbl.Flags, mbl.Nonce[0], mbl.Nonce[1], mbl.Nonce[2])
+		fmt.Println(line)
 	}
 	if err = encoder.Encode(params); err != nil {
 		return
