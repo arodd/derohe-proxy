@@ -134,15 +134,18 @@ func RandomGenerator() {
 
 			byte_size, err := qrand.Read(newdata[:])
 
-			fmt.Printf("Generated %d bytes of random data (Data store size: %d)\n", byte_size, len(MyRandomData))
 			if err == nil {
 
 				random_data_lock.Lock()
 
 				MyRandomData[int(time.Now().UnixMilli())] = newdata
 
+				fmt.Printf("Generated %d bytes of random data (Data store size: %d)\n", byte_size, len(MyRandomData))
+
 				random_data_lock.Unlock()
 
+			} else {
+				fmt.Printf("Error when fetching random data: %s\n", err.Error())
 			}
 		} else {
 			// fmt.Print("Sleeping\n")
