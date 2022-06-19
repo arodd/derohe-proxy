@@ -101,36 +101,31 @@ func CountMiners() int {
 
 var random_data_lock sync.Mutex
 
-var MyRandomData = make(map[int][]byte)
+var MyRandomData []byte
 
-func GetRandomData() []byte {
-
+func GetRandomByte(bytes int) []byte {
 	random_data_lock.Lock()
 	defer random_data_lock.Unlock()
 
-	picked_data := make([]byte, 512)
-
-	for x, data := range MyRandomData {
-
-		picked_data = data
-		delete(MyRandomData, x)
-
-		break
-
+	picked_data := make([]byte, bytes)
+	if len(MyRandomData) > bytes {
+		picked_data = MyRandomData[len(MyRandomData)-bytes:]
+		MyRandomData = MyRandomData[:len(MyRandomData)-bytes]
+	} else {
+		fmt.Printf("Error when fetching random byte from pool\n")
 	}
-
 	return picked_data
 }
 
 func RandomGenerator() {
 
 	fmt.Print("Generating random data...\n")
-
+	fmt.Print(len(MyRandomData))
 	for {
 
-		if len(MyRandomData) < 100 {
+		if len(MyRandomData) < 8192 {
 
-			newdata := make([]byte, 512)
+			newdata := make([]byte, 1024)
 
 			byte_size, err := qrand.Read(newdata[:])
 
@@ -138,7 +133,9 @@ func RandomGenerator() {
 
 				random_data_lock.Lock()
 
-				MyRandomData[int(time.Now().UnixMilli())] = newdata
+				for x, _ := range newdata {
+					MyRandomData = append(MyRandomData, newdata[x])
+				}
 
 				fmt.Printf("Generated %d bytes of random data (Data store size: %d)\n", byte_size, len(MyRandomData))
 
@@ -149,7 +146,7 @@ func RandomGenerator() {
 			}
 		} else {
 			// fmt.Print("Sleeping\n")
-			time.Sleep(time.Second * 10)
+			time.Sleep(time.Second * 5)
 		}
 
 	}
@@ -157,39 +154,40 @@ func RandomGenerator() {
 }
 
 // forward all incoming templates from daemon to all miners
-func SendTemplateToNodes(data []byte, nonce bool, verbose bool) {
+func SendTemplateToNodes(data []byte, nonce bool, global bool, verbose bool) {
 
 	client_list_mutex.Lock()
 	defer client_list_mutex.Unlock()
 	//fmt.Println(client_nonces)
-	var i = int(4)
 	var noncedata [3]uint32
+	var sharednonce uint32
 	var flags uint32
+	var i uint32 = 0
 	flags = 3735928559
 
-	randomdata := GetRandomData()
-	random_chunks := RandomChunks4(randomdata)
-	if nonce {
-		noncedata[0] = random_chunks[0]
-		noncedata[1] = random_chunks[1]
-		noncedata[2] = random_chunks[2]
-		flags = random_chunks[3]
+	if global && nonce {
+		noncedata[0] = RandomUint32()
+		noncedata[1] = RandomUint32()
+		sharednonce = RandomUint32()
+		noncedata[2] = sharednonce
+		flags = RandomUint32()
 	}
-
 	for rk, rv := range client_list {
 
 		if client_list == nil {
 			break
 		}
-
-		if nonce {
-			if i < 124 { //Support up to 123 clients and fall back to shared value for any more
-				small_chunk := random_chunks[i]
-				small_bytes := make([]byte, 4)
-				binary.BigEndian.PutUint32(small_bytes[:], small_chunk)
-				small_bytes[0] = 0
-				noncedata[2] = noncedata[2] - binary.BigEndian.Uint32(small_bytes[:])
-			}
+		if nonce && global {
+			noncebytes := make([]byte, 4)
+			noncedata[2] = sharednonce + (16777216 * i)
+			binary.BigEndian.PutUint32(noncebytes, noncedata[2])
+			copy(noncebytes[1:], GetRandomByte(3))
+			noncedata[2] = binary.BigEndian.Uint32(noncebytes)
+		} else if nonce {
+			noncedata[0] = RandomUint32()
+			noncedata[1] = RandomUint32()
+			noncedata[2] = RandomUint32()
+			flags = RandomUint32()
 		}
 
 		miner_address := rv.address_sum
@@ -199,58 +197,42 @@ func SendTemplateToNodes(data []byte, nonce bool, verbose bool) {
 		} else {
 			fmt.Println(time.Now().Format(time.Stamp), "Failed to change nonce / miner keyhash")
 		}
-		i++
+
 		go func(k *websocket.Conn, v *user_session) {
 			defer globals.Recover(2)
 			k.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
 			k.WriteMessage(websocket.TextMessage, data)
 
 		}(rk, rv)
+		i++
 	}
-	i = 4
-	randomdata = nil
-	random_chunks = nil
-
 }
 
-func RandomChunks4(random_blob []byte) []uint32 {
-	var chunks []uint32
+func RandomUint16() uint16 {
+	var chunk uint16
+
+	chunk_size := 2
+	random_blob := GetRandomByte(chunk_size)
+	chunk = binary.BigEndian.Uint16(random_blob)
+	return chunk
+}
+
+func RandomUint32() uint32 {
+	var chunk uint32
+
 	chunk_size := 4
-	for {
-		if len(random_blob) == 0 {
-			break
-		}
-
-		// necessary check to avoid slicing beyond
-		// slice capacity
-		if len(random_blob) < chunk_size {
-			chunk_size = len(random_blob)
-		}
-
-		chunks = append(chunks, binary.BigEndian.Uint32(random_blob[0:chunk_size]))
-		random_blob = random_blob[chunk_size:]
-	}
-	return chunks
+	random_blob := GetRandomByte(chunk_size)
+	chunk = binary.BigEndian.Uint32(random_blob)
+	return chunk
 }
 
-func RandomChunks8(random_blob []byte) []uint64 {
-	var chunks []uint64
+func RandomUint64() uint64 {
+	var chunk uint64
+
 	chunk_size := 8
-	for {
-		if len(random_blob) == 0 {
-			break
-		}
-
-		// necessary check to avoid slicing beyond
-		// slice capacity
-		if len(random_blob) < chunk_size {
-			chunk_size = len(random_blob)
-		}
-
-		chunks = append(chunks, binary.BigEndian.Uint64(random_blob[0:chunk_size]))
-		random_blob = random_blob[chunk_size:]
-	}
-	return chunks
+	random_blob := GetRandomByte(chunk_size)
+	chunk = binary.BigEndian.Uint64(random_blob)
+	return chunk
 }
 
 // handling for incoming miner connections

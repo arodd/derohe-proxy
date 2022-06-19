@@ -61,6 +61,11 @@ func main() {
 		fmt.Printf("%v Nonce editing is enabled\n", time.Now().Format(time.Stamp))
 	}
 
+	if Arguments["--global"].(bool) {
+		global = true
+		fmt.Printf("%v Global Nonce targeting is enabled\n", time.Now().Format(time.Stamp))
+	}
+
 	if Arguments["--verbose"].(bool) {
 		verbose = true
 		fmt.Printf("%v Verbose nonce output is enabled\n", time.Now().Format(time.Stamp))
@@ -80,7 +85,7 @@ func main() {
 	fmt.Print("Building random data for 5 sec...\n")
 	time.Sleep(time.Second * 5)
 
-	go proxy.Start_client(daemon_address, proxy.Address, minimal, nonce, verbose)
+	go proxy.Start_client(daemon_address, proxy.Address, minimal, nonce, global, verbose)
 
 	for {
 		time.Sleep(time.Second * time.Duration(log_intervall))

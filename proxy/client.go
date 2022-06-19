@@ -18,7 +18,7 @@ var Minis uint64
 var Rejected uint64
 
 // proxy-client
-func Start_client(v string, w string, min_jobs bool, nonce bool, verbose bool) {
+func Start_client(v string, w string, min_jobs bool, nonce bool, global bool, verbose bool) {
 	var err error
 	var last_diff uint64
 	var last_height uint64
@@ -67,10 +67,10 @@ func Start_client(v string, w string, min_jobs bool, nonce bool, verbose bool) {
 				if params.Height != last_height || params.Difficultyuint64 != last_diff { //need to add working finalblock check for more jobs on final blocks
 					last_height = params.Height
 					last_diff = params.Difficultyuint64
-					go SendTemplateToNodes(recv_data, nonce, verbose)
+					go SendTemplateToNodes(recv_data, nonce, global, verbose)
 				}
 			} else {
-				go SendTemplateToNodes(recv_data, nonce, verbose)
+				go SendTemplateToNodes(recv_data, nonce, global, verbose)
 			}
 		}
 	}
