@@ -263,8 +263,9 @@ func onWebsocket(w http.ResponseWriter, r *http.Request) {
 
 	addr, err := globals.ParseValidateAddress(address)
 	if err != nil {
-		fmt.Fprintf(w, "err: %s\n", err)
-		return
+		// Ignore errors for testnet vs. mainnet
+		// fmt.Fprintf(w, "err: %s\n", err)
+		// return
 	}
 
 	upgrader := newUpgrader()
