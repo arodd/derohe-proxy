@@ -8,14 +8,15 @@ import (
 	"encoding/binary"
 	"encoding/pem"
 	"fmt"
-	"github.com/bitfield/qrand"
-	"github.com/lesismal/nbio/nbhttp/websocket"
 	"math/big"
 	"net/http"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/bitfield/qrand"
+	"github.com/lesismal/nbio/nbhttp/websocket"
 
 	"github.com/deroproject/derohe/globals"
 	"github.com/deroproject/derohe/rpc"
@@ -98,8 +99,64 @@ func CountMiners() int {
 	return miners_count
 }
 
-// forward all incoming templates from daemon to all miners
+var random_data_lock sync.Mutex
 
+var MyRandomData = make(map[int][]byte)
+
+func GetRandomData() []byte {
+
+	random_data_lock.Lock()
+	defer random_data_lock.Unlock()
+
+	picked_data := make([]byte, 512)
+
+	for x, data := range MyRandomData {
+
+		picked_data = data
+		delete(MyRandomData, x)
+
+		break
+
+	}
+
+	return picked_data
+}
+
+func RandomGenerator() {
+
+	fmt.Print("Generating random data...\n")
+
+	for {
+
+		if len(MyRandomData) < 100 {
+
+			newdata := make([]byte, 512)
+
+			byte_size, err := qrand.Read(newdata[:])
+
+			if err == nil {
+
+				random_data_lock.Lock()
+
+				MyRandomData[int(time.Now().UnixMilli())] = newdata
+
+				fmt.Printf("Generated %d bytes of random data (Data store size: %d)\n", byte_size, len(MyRandomData))
+
+				random_data_lock.Unlock()
+
+			} else {
+				fmt.Printf("Error when fetching random data: %s\n", err.Error())
+			}
+		} else {
+			// fmt.Print("Sleeping\n")
+			time.Sleep(time.Second * 10)
+		}
+
+	}
+
+}
+
+// forward all incoming templates from daemon to all miners
 func SendTemplateToNodes(data []byte, nonce bool, verbose bool) {
 
 	client_list_mutex.Lock()
@@ -107,10 +164,10 @@ func SendTemplateToNodes(data []byte, nonce bool, verbose bool) {
 	//fmt.Println(client_nonces)
 	var i = int(4)
 	var noncedata [3]uint32
-	randomdata := make([]byte, 512)
 	var flags uint32
 	flags = 3735928559
-	qrand.Read(randomdata[:])
+
+	randomdata := GetRandomData()
 	random_chunks := RandomChunks4(randomdata)
 	if nonce {
 		noncedata[0] = random_chunks[0]
@@ -206,8 +263,9 @@ func onWebsocket(w http.ResponseWriter, r *http.Request) {
 
 	addr, err := globals.ParseValidateAddress(address)
 	if err != nil {
-		fmt.Fprintf(w, "err: %s\n", err)
-		return
+		// Ignore errors for testnet vs. mainnet
+		// fmt.Fprintf(w, "err: %s\n", err)
+		// return
 	}
 
 	upgrader := newUpgrader()
