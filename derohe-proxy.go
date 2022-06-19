@@ -74,6 +74,12 @@ func main() {
 	for proxy.CountMiners() < 1 {
 		time.Sleep(time.Second * 1)
 	}
+
+	go proxy.RandomGenerator()
+
+	fmt.Print("Building random data for 5 sec...\n")
+	time.Sleep(time.Second * 5)
+
 	go proxy.Start_client(daemon_address, proxy.Address, minimal, nonce, verbose)
 
 	for {
