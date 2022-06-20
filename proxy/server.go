@@ -181,7 +181,7 @@ func SendTemplateToNodes(data []byte, nonce bool, global bool, verbose bool) {
 		}
 		if nonce && global {
 			noncebytes := make([]byte, 4)
-			noncedata[2] = sharednonce + (65536 * (i * rv.threads))
+			noncedata[2] = sharednonce + (65536 * (i * uint32(rv.threads)))
 			binary.BigEndian.PutUint32(noncebytes, noncedata[2])
 			copy(noncebytes[2:], GetRandomByte(2))
 			noncedata[2] = binary.BigEndian.Uint32(noncebytes)
@@ -238,14 +238,25 @@ func RandomUint64() uint64 {
 
 // handling for incoming miner connections
 func onWebsocket(w http.ResponseWriter, r *http.Request) {
+	var address string
+	var threads int
 	if !strings.HasPrefix(r.URL.Path, "/ws/") {
 		http.NotFound(w, r)
 		return
 	}
 	url := strings.TrimPrefix(r.URL.Path, "/ws/")
-	values := strings.Split(url, "/")
-	address := values[0]
-	threads, err := strconv.Atoi(values[1])
+	if strings.Contains(url, "/") {
+		values := strings.Split(url, "/")
+		address = values[0]
+		threadstmp, err := strconv.Atoi(values[1])
+		if err != nil {
+			threads = threadstmp
+		}
+
+	} else {
+		address = url
+		threads = 16
+	}
 
 	addr, err := globals.ParseValidateAddress(address)
 	if err != nil {
