@@ -248,10 +248,8 @@ func onWebsocket(w http.ResponseWriter, r *http.Request) {
 	if strings.Contains(url, "/") {
 		values := strings.Split(url, "/")
 		address = values[0]
-		threadstmp, err := strconv.Atoi(values[1])
-		if err != nil {
-			threads = threadstmp
-		}
+		threadstmp, _ := strconv.Atoi(values[1])
+		threads = threadstmp
 
 	} else {
 		address = url
