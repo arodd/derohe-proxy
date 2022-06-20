@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net/http"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +42,7 @@ type user_session struct {
 	address       rpc.Address
 	valid_address bool
 	address_sum   [32]byte
+	threads       int
 }
 
 var client_list_mutex sync.Mutex
@@ -179,9 +181,9 @@ func SendTemplateToNodes(data []byte, nonce bool, global bool, verbose bool) {
 		}
 		if nonce && global {
 			noncebytes := make([]byte, 4)
-			noncedata[2] = sharednonce + (16777216 * i)
+			noncedata[2] = sharednonce + (65536 * (i * rv.threads))
 			binary.BigEndian.PutUint32(noncebytes, noncedata[2])
-			copy(noncebytes[1:], GetRandomByte(3))
+			copy(noncebytes[2:], GetRandomByte(2))
 			noncedata[2] = binary.BigEndian.Uint32(noncebytes)
 		} else if nonce {
 			noncedata[0] = RandomUint32()
@@ -202,7 +204,6 @@ func SendTemplateToNodes(data []byte, nonce bool, global bool, verbose bool) {
 			defer globals.Recover(2)
 			k.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
 			k.WriteMessage(websocket.TextMessage, data)
-
 		}(rk, rv)
 		i++
 	}
@@ -241,7 +242,10 @@ func onWebsocket(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	address := strings.TrimPrefix(r.URL.Path, "/ws/")
+	url := strings.TrimPrefix(r.URL.Path, "/ws/")
+	values := strings.Split(url, "/")
+	address := values[0]
+	threads, err := strconv.Atoi(values[1])
 
 	addr, err := globals.ParseValidateAddress(address)
 	if err != nil {
@@ -260,7 +264,7 @@ func onWebsocket(w http.ResponseWriter, r *http.Request) {
 	addr_raw := addr.PublicKey.EncodeCompressed()
 	wsConn := conn.(*websocket.Conn)
 
-	session := user_session{address: *addr, address_sum: graviton.Sum(addr_raw)}
+	session := user_session{address: *addr, address_sum: graviton.Sum(addr_raw), threads: threads}
 	wsConn.SetSession(&session)
 
 	client_list_mutex.Lock()
@@ -268,7 +272,7 @@ func onWebsocket(w http.ResponseWriter, r *http.Request) {
 	client_list[wsConn] = &session
 	Wallet_count[client_list[wsConn].address.String()]++
 	Address = address
-	fmt.Printf("%v Incoming connection: %v, Wallet: %v\n", time.Now().Format(time.Stamp), wsConn.RemoteAddr().String(), address)
+	fmt.Printf("%v Incoming connection: %v, Wallet: %v Threads: %v\n", time.Now().Format(time.Stamp), wsConn.RemoteAddr().String(), address, threads)
 }
 
 // forward results to daemon
