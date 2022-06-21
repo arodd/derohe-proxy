@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/deroproject/derohe/rpc"
@@ -18,15 +19,16 @@ var Minis uint64
 var Rejected uint64
 
 // proxy-client
-func Start_client(v string, w string, min_jobs bool, nonce bool, global bool, verbose bool) {
+func Start_client(v string, w string, min_jobs bool, nonce bool, global bool, verbose bool, job_rate time.Duration) {
 	var err error
 	var last_diff uint64
 	var last_height uint64
+	var jobs_per_block int
+	var jobtimer time.Time
 
 	rand.Seed(time.Now().UnixMilli())
 
 	for {
-
 		u := url.URL{Scheme: "wss", Host: v, Path: "/ws/" + w}
 
 		dialer := websocket.DefaultDialer
@@ -46,6 +48,7 @@ func Start_client(v string, w string, min_jobs bool, nonce bool, global bool, ve
 
 		for {
 			msg_type, recv_data, err := connection.ReadMessage()
+
 			if err != nil {
 				break
 			}
@@ -69,11 +72,40 @@ func Start_client(v string, w string, min_jobs bool, nonce bool, global bool, ve
 					last_diff = params.Difficultyuint64
 					go SendTemplateToNodes(recv_data, nonce, global, verbose)
 				}
+
 			} else {
-				go SendTemplateToNodes(recv_data, nonce, global, verbose)
+				if params.Difficultyuint64 != last_diff {
+					last_height = params.Height
+					last_diff = params.Difficultyuint64
+
+					finalblock := strings.HasPrefix(params.Blockhashing_blob, "71")
+					if verbose {
+						if finalblock {
+							fmt.Printf("Jobs per mini: %d\n", jobs_per_block)
+
+						} else {
+							fmt.Printf("Jobs per final: %d\n", jobs_per_block)
+
+						}
+					}
+
+					jobs_per_block = 0
+					go SendTemplateToNodes(recv_data, nonce, global, verbose)
+					jobtimer = time.Now()
+					jobs_per_block++
+				} else {
+					if time.Since(jobtimer) > job_rate {
+						go SendTemplateToNodes(recv_data, nonce, global, verbose)
+						jobtimer = time.Now()
+						jobs_per_block++
+					}
+				}
+
 			}
+
 		}
 	}
+
 }
 
 func SendToDaemon(buffer []byte) {

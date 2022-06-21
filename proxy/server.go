@@ -122,7 +122,6 @@ func GetRandomByte(bytes int) []byte {
 func RandomGenerator() {
 
 	fmt.Print("Generating random data...\n")
-	fmt.Print(len(MyRandomData))
 	for {
 
 		if len(MyRandomData) < 8192 {

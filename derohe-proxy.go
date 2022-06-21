@@ -50,6 +50,14 @@ func main() {
 			}
 		}
 	}
+	if Arguments["--jobrate"] != nil {
+		job_rate, err := time.ParseDuration(Arguments["--jobrate"].(string))
+		if err != nil {
+			return
+		} else {
+			jobrate = job_rate
+		}
+	}
 
 	if Arguments["--minimal"].(bool) {
 		minimal = true
@@ -72,6 +80,7 @@ func main() {
 	}
 
 	fmt.Printf("%v Logging every %d seconds\n", time.Now().Format(time.Stamp), log_intervall)
+	fmt.Printf("%v Job Dispatch Rate: %s\n", time.Now().Format(time.Stamp), jobrate.String())
 
 	go proxy.Start_server(listen_addr)
 
@@ -82,10 +91,10 @@ func main() {
 
 	go proxy.RandomGenerator()
 
-	fmt.Print("Building random data for 5 sec...\n")
-	time.Sleep(time.Second * 5)
+	fmt.Print("Building random data for 10 sec...\n")
+	time.Sleep(time.Second * 10)
 
-	go proxy.Start_client(daemon_address, proxy.Address, minimal, nonce, global, verbose)
+	go proxy.Start_client(daemon_address, proxy.Address, minimal, nonce, global, verbose, jobrate)
 
 	for {
 		time.Sleep(time.Second * time.Duration(log_intervall))
