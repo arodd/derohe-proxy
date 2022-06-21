@@ -88,7 +88,6 @@ func main() {
 	for proxy.CountMiners() < 1 {
 		time.Sleep(time.Second * 1)
 	}
-
 	go proxy.RandomGenerator()
 
 	fmt.Print("Building random data for 10 sec...\n")

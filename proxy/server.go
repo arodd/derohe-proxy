@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bitfield/qrand"
+	"github.com/arodd/qrand"
 	"github.com/lesismal/nbio/nbhttp/websocket"
 
 	"github.com/deroproject/derohe/globals"
@@ -105,18 +105,20 @@ var random_data_lock sync.Mutex
 
 var MyRandomData []byte
 
-func GetRandomByte(bytes int) []byte {
+func GetRandomByte(bytes int) (bool, []byte) {
 	random_data_lock.Lock()
 	defer random_data_lock.Unlock()
+	var err bool
 
 	picked_data := make([]byte, bytes)
 	if len(MyRandomData) > bytes {
 		picked_data = MyRandomData[len(MyRandomData)-bytes:]
 		MyRandomData = MyRandomData[:len(MyRandomData)-bytes]
+		err = false
 	} else {
-		fmt.Printf("Error when fetching random byte from pool\n")
+		err = true
 	}
-	return picked_data
+	return err, picked_data
 }
 
 func RandomGenerator() {
@@ -127,7 +129,7 @@ func RandomGenerator() {
 		if len(MyRandomData) < 8192 {
 
 			newdata := make([]byte, 1024)
-
+			start := time.Now()
 			byte_size, err := qrand.Read(newdata[:])
 
 			if err == nil {
@@ -138,12 +140,13 @@ func RandomGenerator() {
 					MyRandomData = append(MyRandomData, newdata[x])
 				}
 
-				fmt.Printf("Generated %d bytes of random data (Data store size: %d)\n", byte_size, len(MyRandomData))
+				fmt.Printf("Generated %d bytes of random data in %s (Data store size: %d)\n", byte_size, time.Since(start).String(), len(MyRandomData))
 
 				random_data_lock.Unlock()
 
 			} else {
 				fmt.Printf("Error when fetching random data: %s\n", err.Error())
+				time.Sleep(time.Second * 5)
 			}
 		} else {
 			// fmt.Print("Sleeping\n")
@@ -151,6 +154,10 @@ func RandomGenerator() {
 		}
 
 	}
+
+}
+
+func SendTemplateToNode() {
 
 }
 
@@ -182,9 +189,17 @@ func SendTemplateToNodes(data []byte, nonce bool, global bool, verbose bool) {
 			noncebytes := make([]byte, 4)
 			noncedata[2] = sharednonce + (65536 * (i * uint32(rv.threads)))
 			binary.BigEndian.PutUint32(noncebytes, noncedata[2])
-			copy(noncebytes[2:], GetRandomByte(2))
+			err, randombytes := GetRandomByte(2)
+			if err {
+				fmt.Println("Error Retrieving random Bytes from cache")
+			}
+			copy(noncebytes[2:], randombytes)
 			noncedata[2] = binary.BigEndian.Uint32(noncebytes)
 		} else if nonce {
+			err, _ := GetRandomByte(1)
+			if err {
+				fmt.Println("Error Retrieving random bytes from cache")
+			}
 			noncedata[0] = RandomUint32()
 			noncedata[1] = RandomUint32()
 			noncedata[2] = RandomUint32()
@@ -212,7 +227,7 @@ func RandomUint16() uint16 {
 	var chunk uint16
 
 	chunk_size := 2
-	random_blob := GetRandomByte(chunk_size)
+	_, random_blob := GetRandomByte(chunk_size)
 	chunk = binary.BigEndian.Uint16(random_blob)
 	return chunk
 }
@@ -221,7 +236,7 @@ func RandomUint32() uint32 {
 	var chunk uint32
 
 	chunk_size := 4
-	random_blob := GetRandomByte(chunk_size)
+	_, random_blob := GetRandomByte(chunk_size)
 	chunk = binary.BigEndian.Uint32(random_blob)
 	return chunk
 }
@@ -230,7 +245,7 @@ func RandomUint64() uint64 {
 	var chunk uint64
 
 	chunk_size := 8
-	random_blob := GetRandomByte(chunk_size)
+	_, random_blob := GetRandomByte(chunk_size)
 	chunk = binary.BigEndian.Uint64(random_blob)
 	return chunk
 }
