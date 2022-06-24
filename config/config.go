@@ -1,8 +1,10 @@
-package main
+package config
 
-import "time"
+import (
+	"time"
+)
 
-var command_line string = `derohe-proxy
+var CommandLine string = `derohe-proxy
 Proxy to combine all miners and to reduce network load
 
 Usage:
@@ -25,26 +27,15 @@ Example Mainnet: ./derohe-proxy --daemon-address=minernode1.dero.io:10100
 // program arguments
 var Arguments = map[string]interface{}{}
 
-var listen_addr string = "0.0.0.0:10200"
-var daemon_address string = "minernode1.dero.io:10100"
-
-// logging interval in seconds
-var log_intervall int = 60
-
-// send only 2 jobs per block
-var minimal bool = false
-
-// edit nonce
-var nonce bool = false
-
-// edit nonce globally with small unique space for clients
-var global bool = false
-
-// print nonces/flags
-var verbose bool = false
-
-// zero nonce2/flags
-var zero bool = false
-
-// job dispatch rate
-var jobrate time.Duration = (500 * time.Millisecond)
+type ProxyConfig struct {
+	ListenAddr  string
+	DaemonAddr  string
+	PatternAddr string
+	LogInterval int
+	Minimal     bool
+	NonceEdit   bool
+	Global      bool
+	ZeroNonce   bool
+	Verbose     bool
+	JobRate     time.Duration
+}

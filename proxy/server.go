@@ -5,6 +5,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"derohe-proxy/config"
 	"encoding/binary"
 	"encoding/pem"
 	"errors"
@@ -28,6 +29,7 @@ import (
 	"github.com/lesismal/nbio/nbhttp"
 )
 
+var proxyConfig config.ProxyConfig
 var server *nbhttp.Server
 
 var memPool = sync.Pool{
@@ -46,6 +48,12 @@ type user_session struct {
 	threads       int
 }
 
+type work_template struct {
+	NonceData   [3]uint32
+	Flags       uint32
+	SharedNonce uint32
+}
+
 var client_list_mutex sync.Mutex
 var client_list = map[*websocket.Conn]*user_session{}
 
@@ -53,8 +61,9 @@ var miners_count int
 var Wallet_count map[string]uint
 var Address string
 
-func Start_server(listen string) {
+func Start_server(configData config.ProxyConfig) {
 	var err error
+	proxyConfig = configData
 
 	tlsConfig := &tls.Config{
 		Certificates:       []tls.Certificate{generate_random_tls_cert()},
@@ -67,7 +76,7 @@ func Start_server(listen string) {
 	server = nbhttp.NewServer(nbhttp.Config{
 		Name:                    "GETWORK",
 		Network:                 "tcp",
-		AddrsTLS:                []string{listen},
+		AddrsTLS:                []string{proxyConfig.ListenAddr},
 		TLSConfig:               tlsConfig,
 		Handler:                 mux,
 		MaxLoad:                 10 * 1024,
@@ -157,82 +166,93 @@ func RandomGenerator() {
 
 }
 
-func SendTemplateToNode() {
+func GetGlobalWork() work_template {
+	var work_data = work_template{}
 
+	work_data.Flags = 3735928559
+
+	if proxyConfig.Global && proxyConfig.NonceEdit && proxyConfig.ZeroNonce {
+		work_data.NonceData[0] = RandomUint32()
+		work_data.NonceData[1] = uint32(0)
+		work_data.SharedNonce = RandomUint32()
+		work_data.NonceData[2] = work_data.SharedNonce
+		work_data.Flags = uint32(0)
+	} else if proxyConfig.Global && proxyConfig.NonceEdit {
+		work_data.NonceData[0] = RandomUint32()
+		work_data.NonceData[1] = RandomUint32()
+		work_data.SharedNonce = RandomUint32()
+		work_data.NonceData[2] = work_data.SharedNonce
+		work_data.Flags = RandomUint32()
+	}
+	return work_data
+}
+
+func GetClientWork(work_data work_template, client_index uint32, threads int) work_template {
+	var client_data work_template
+	if proxyConfig.NonceEdit && proxyConfig.Global {
+		noncebytes := make([]byte, 4)
+		client_data.NonceData = work_data.NonceData
+		client_data.Flags = work_data.Flags
+		client_data.NonceData[2] = work_data.SharedNonce + (65536 * (client_index * uint32(threads)))
+		binary.BigEndian.PutUint32(noncebytes, client_data.NonceData[2])
+		randombytes, err := GetRandomByte(2)
+		if err != nil {
+			fmt.Println(err)
+		}
+		copy(noncebytes[2:], randombytes)
+		client_data.NonceData[2] = binary.BigEndian.Uint32(noncebytes)
+	} else if proxyConfig.NonceEdit && proxyConfig.ZeroNonce {
+		_, err := GetRandomByte(1)
+		if err != nil {
+			fmt.Println(err)
+		}
+		client_data.NonceData[0] = RandomUint32()
+		client_data.NonceData[1] = 0
+		client_data.NonceData[2] = RandomUint32()
+		client_data.Flags = 0
+	} else if proxyConfig.NonceEdit {
+		_, err := GetRandomByte(1)
+		if err != nil {
+			fmt.Println(err)
+		}
+		client_data.NonceData[0] = RandomUint32()
+		client_data.NonceData[1] = RandomUint32()
+		client_data.NonceData[2] = RandomUint32()
+		client_data.Flags = RandomUint32()
+	}
+	return client_data
+}
+
+func SendTemplateToNode(data []byte, work_data work_template, client_index uint32, ck *websocket.Conn, cv *user_session) {
+	miner_address := cv.address_sum
+
+	if result := edit_blob(data, miner_address, GetClientWork(work_data, client_index, cv.threads)); result != nil {
+		data = result
+	} else {
+		fmt.Println(time.Now().Format(time.Stamp), "Failed to change nonce / miner keyhash")
+	}
+
+	go func(k *websocket.Conn, v *user_session) {
+		defer globals.Recover(2)
+		k.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
+		k.WriteMessage(websocket.TextMessage, data)
+	}(ck, cv)
 }
 
 // forward all incoming templates from daemon to all miners
-func SendTemplateToNodes(data []byte, nonce bool, zero bool, global bool, verbose bool) {
-
+func SendTemplateToNodes(data []byte) {
 	client_list_mutex.Lock()
 	defer client_list_mutex.Unlock()
-	//fmt.Println(client_nonces)
-	var noncedata [3]uint32
-	var sharednonce uint32
-	var flags uint32
 	var i uint32 = 0
-	flags = 3735928559
-	if global && nonce && zero {
-		noncedata[0] = RandomUint32()
-		noncedata[1] = uint32(0)
-		sharednonce = RandomUint32()
-		noncedata[2] = sharednonce
-		flags = uint32(0)
-	} else if global && nonce {
-		noncedata[0] = RandomUint32()
-		noncedata[1] = RandomUint32()
-		sharednonce = RandomUint32()
-		noncedata[2] = sharednonce
-		flags = RandomUint32()
-	}
+
+	work_data := GetGlobalWork()
+
 	for rk, rv := range client_list {
 
 		if client_list == nil {
 			break
 		}
-		if nonce && global {
-			noncebytes := make([]byte, 4)
-			noncedata[2] = sharednonce + (65536 * (i * uint32(rv.threads)))
-			binary.BigEndian.PutUint32(noncebytes, noncedata[2])
-			randombytes, err := GetRandomByte(2)
-			if err != nil {
-				fmt.Println(err)
-			}
-			copy(noncebytes[2:], randombytes)
-			noncedata[2] = binary.BigEndian.Uint32(noncebytes)
-		} else if nonce && zero {
-			_, err := GetRandomByte(1)
-			if err != nil {
-				fmt.Println(err)
-			}
-			noncedata[0] = RandomUint32()
-			noncedata[1] = 0
-			noncedata[2] = RandomUint32()
-			flags = 0
-		} else if nonce {
-			_, err := GetRandomByte(1)
-			if err != nil {
-				fmt.Println(err)
-			}
-			noncedata[0] = RandomUint32()
-			noncedata[1] = RandomUint32()
-			noncedata[2] = RandomUint32()
-			flags = RandomUint32()
-		}
-
-		miner_address := rv.address_sum
-
-		if result := edit_blob(data, miner_address, nonce, verbose, noncedata, flags); result != nil {
-			data = result
-		} else {
-			fmt.Println(time.Now().Format(time.Stamp), "Failed to change nonce / miner keyhash")
-		}
-
-		go func(k *websocket.Conn, v *user_session) {
-			defer globals.Recover(2)
-			k.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
-			k.WriteMessage(websocket.TextMessage, data)
-		}(rk, rv)
+		go SendTemplateToNode(data, work_data, i, rk, rv)
 		i++
 	}
 }

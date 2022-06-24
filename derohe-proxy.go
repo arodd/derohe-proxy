@@ -1,6 +1,7 @@
 package main
 
 import (
+	"derohe-proxy/config"
 	"derohe-proxy/proxy"
 	"fmt"
 	"net"
@@ -10,100 +11,111 @@ import (
 	"github.com/docopt/docopt-go"
 )
 
+var proxyConfig = config.ProxyConfig{
+	ListenAddr:  "0.0.0.0:10200",
+	DaemonAddr:  "minernode1.dero.io:10100",
+	LogInterval: 60,
+	Minimal:     false,
+	NonceEdit:   false,
+	Global:      false,
+	ZeroNonce:   false,
+	Verbose:     false,
+	JobRate:     (500 * time.Millisecond),
+}
+
 func main() {
 	var err error
-
-	Arguments, err = docopt.Parse(command_line, nil, true, "pre-alpha", false)
+	config.Arguments, err = docopt.Parse(config.CommandLine, nil, true, "pre-alpha", false)
 
 	if err != nil {
 		return
 	}
 
-	if Arguments["--listen-address"] != nil {
-		addr, err := net.ResolveTCPAddr("tcp", Arguments["--listen-address"].(string))
+	if config.Arguments["--listen-address"] != nil {
+		addr, err := net.ResolveTCPAddr("tcp", config.Arguments["--listen-address"].(string))
 		if err != nil {
 			return
 		} else {
 			if addr.Port == 0 {
 				return
 			} else {
-				listen_addr = addr.String()
+				proxyConfig.ListenAddr = addr.String()
 			}
 		}
 	}
 
-	if Arguments["--daemon-address"] == nil {
+	if config.Arguments["--daemon-address"] == nil {
 		return
 	} else {
-		daemon_address = Arguments["--daemon-address"].(string)
+		proxyConfig.DaemonAddr = config.Arguments["--daemon-address"].(string)
 	}
 
-	if Arguments["--log-interval"] != nil {
-		interval, err := strconv.ParseInt(Arguments["--log-interval"].(string), 10, 32)
+	if config.Arguments["--log-interval"] != nil {
+		interval, err := strconv.ParseInt(config.Arguments["--log-interval"].(string), 10, 32)
 		if err != nil {
 			return
 		} else {
 			if interval < 60 || interval > 3600 {
-				log_intervall = 60
+				proxyConfig.LogInterval = 60
 			} else {
-				log_intervall = int(interval)
+				proxyConfig.LogInterval = int(interval)
 			}
 		}
 	}
-	if Arguments["--jobrate"] != nil {
-		job_rate, err := time.ParseDuration(Arguments["--jobrate"].(string))
+	if config.Arguments["--jobrate"] != nil {
+		job_rate, err := time.ParseDuration(config.Arguments["--jobrate"].(string))
 		if err != nil {
 			return
 		} else {
-			jobrate = job_rate
+			proxyConfig.JobRate = job_rate
 		}
 	}
 
-	if Arguments["--minimal"].(bool) {
-		minimal = true
+	if config.Arguments["--minimal"].(bool) {
+		proxyConfig.Minimal = true
 		fmt.Printf("%v Forward only 2 jobs per block\n", time.Now().Format(time.Stamp))
 	}
 
-	if Arguments["--nonce"].(bool) {
-		nonce = true
+	if config.Arguments["--nonce"].(bool) {
+		proxyConfig.NonceEdit = true
 		fmt.Printf("%v Nonce editing is enabled\n", time.Now().Format(time.Stamp))
 	}
 
-	if Arguments["--zero"].(bool) {
-		zero = true
+	if config.Arguments["--zero"].(bool) {
+		proxyConfig.ZeroNonce = true
 		fmt.Printf("%v Flags/Nonce2 zeroing are enabled\n", time.Now().Format(time.Stamp))
 	}
 
-	if Arguments["--global"].(bool) {
-		global = true
+	if config.Arguments["--global"].(bool) {
+		proxyConfig.Global = true
 		fmt.Printf("%v Global Nonce targeting is enabled\n", time.Now().Format(time.Stamp))
 	}
 
-	if Arguments["--verbose"].(bool) {
-		verbose = true
+	if config.Arguments["--verbose"].(bool) {
+		proxyConfig.Verbose = true
 		fmt.Printf("%v Verbose nonce output is enabled\n", time.Now().Format(time.Stamp))
 	}
 
-	fmt.Printf("%v Logging every %d seconds\n", time.Now().Format(time.Stamp), log_intervall)
-	fmt.Printf("%v Job Dispatch Rate: %s\n", time.Now().Format(time.Stamp), jobrate.String())
+	fmt.Printf("%v Logging every %d seconds\n", time.Now().Format(time.Stamp), proxyConfig.LogInterval)
+	fmt.Printf("%v Job Dispatch Rate: %s\n", time.Now().Format(time.Stamp), proxyConfig.JobRate.String())
 
-	go proxy.Start_server(listen_addr)
+	go proxy.Start_server(proxyConfig)
 
 	// Wait for first miner connection to grab wallet address
 	for proxy.CountMiners() < 1 {
 		time.Sleep(time.Second * 1)
 	}
-	if nonce {
+	if proxyConfig.NonceEdit {
 		go proxy.RandomGenerator()
 
 		fmt.Print("Building random data for 10 sec...\n")
 		time.Sleep(time.Second * 10)
 	}
 
-	go proxy.Start_client(daemon_address, proxy.Address, minimal, nonce, zero, global, verbose, jobrate)
+	go proxy.Start_client(proxy.Address)
 
 	for {
-		time.Sleep(time.Second * time.Duration(log_intervall))
+		time.Sleep(time.Second * time.Duration(proxyConfig.LogInterval))
 		fmt.Printf("%v %d miners connected, Bl: %d, Mbl: %d, Rej: %d\n", time.Now().Format(time.Stamp), proxy.CountMiners(), proxy.Blocks, proxy.Minis, proxy.Rejected)
 		for i := range proxy.Wallet_count {
 			if proxy.Wallet_count[i] > 1 {
