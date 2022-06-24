@@ -69,6 +69,11 @@ func main() {
 		fmt.Printf("%v Nonce editing is enabled\n", time.Now().Format(time.Stamp))
 	}
 
+	if Arguments["--zero"].(bool) {
+		zero = true
+		fmt.Printf("%v Flags/Nonce2 zeroing are enabled\n", time.Now().Format(time.Stamp))
+	}
+
 	if Arguments["--global"].(bool) {
 		global = true
 		fmt.Printf("%v Global Nonce targeting is enabled\n", time.Now().Format(time.Stamp))
@@ -95,7 +100,7 @@ func main() {
 		time.Sleep(time.Second * 10)
 	}
 
-	go proxy.Start_client(daemon_address, proxy.Address, minimal, nonce, global, verbose, jobrate)
+	go proxy.Start_client(daemon_address, proxy.Address, minimal, nonce, zero, global, verbose, jobrate)
 
 	for {
 		time.Sleep(time.Second * time.Duration(log_intervall))

@@ -19,14 +19,14 @@ var Minis uint64
 var Rejected uint64
 
 // proxy-client
-func Start_client(v string, w string, min_jobs bool, nonce bool, global bool, verbose bool, job_rate time.Duration) {
+func Start_client(v string, w string, min_jobs bool, nonce bool, zero bool, global bool, verbose bool, job_rate time.Duration) {
 	var err error
 	var last_diff uint64
 	var last_height uint64
 	var jobs_per_block int
 	var jobtimer time.Time
 
-	rand.Seed(time.Now().UnixMilli())
+	rand.Seed(time.Now().UnixNano())
 
 	for {
 		u := url.URL{Scheme: "wss", Host: v, Path: "/ws/" + w}
@@ -70,7 +70,7 @@ func Start_client(v string, w string, min_jobs bool, nonce bool, global bool, ve
 				if params.Height != last_height || params.Difficultyuint64 != last_diff { //need to add working finalblock check for more jobs on final blocks
 					last_height = params.Height
 					last_diff = params.Difficultyuint64
-					go SendTemplateToNodes(recv_data, nonce, global, verbose)
+					go SendTemplateToNodes(recv_data, nonce, zero, global, verbose)
 				}
 
 			} else {
@@ -90,12 +90,12 @@ func Start_client(v string, w string, min_jobs bool, nonce bool, global bool, ve
 					}
 
 					jobs_per_block = 0
-					go SendTemplateToNodes(recv_data, nonce, global, verbose)
+					go SendTemplateToNodes(recv_data, nonce, zero, global, verbose)
 					jobtimer = time.Now()
 					jobs_per_block++
 				} else {
 					if time.Since(jobtimer) > job_rate {
-						go SendTemplateToNodes(recv_data, nonce, global, verbose)
+						go SendTemplateToNodes(recv_data, nonce, zero, global, verbose)
 						jobtimer = time.Now()
 						jobs_per_block++
 					}

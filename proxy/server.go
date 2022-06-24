@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -105,20 +106,19 @@ var random_data_lock sync.Mutex
 
 var MyRandomData []byte
 
-func GetRandomByte(bytes int) (bool, []byte) {
+func GetRandomByte(bytes int) ([]byte, error) {
 	random_data_lock.Lock()
 	defer random_data_lock.Unlock()
-	var err bool
+	var err error
 
 	picked_data := make([]byte, bytes)
 	if len(MyRandomData) > bytes {
 		picked_data = MyRandomData[len(MyRandomData)-bytes:]
 		MyRandomData = MyRandomData[:len(MyRandomData)-bytes]
-		err = false
 	} else {
-		err = true
+		err = errors.New("Error Retrieving Random Bytes from Cache")
 	}
-	return err, picked_data
+	return picked_data, err
 }
 
 func RandomGenerator() {
@@ -162,7 +162,7 @@ func SendTemplateToNode() {
 }
 
 // forward all incoming templates from daemon to all miners
-func SendTemplateToNodes(data []byte, nonce bool, global bool, verbose bool) {
+func SendTemplateToNodes(data []byte, nonce bool, zero bool, global bool, verbose bool) {
 
 	client_list_mutex.Lock()
 	defer client_list_mutex.Unlock()
@@ -172,8 +172,13 @@ func SendTemplateToNodes(data []byte, nonce bool, global bool, verbose bool) {
 	var flags uint32
 	var i uint32 = 0
 	flags = 3735928559
-
-	if global && nonce {
+	if global && nonce && zero {
+		noncedata[0] = RandomUint32()
+		noncedata[1] = uint32(0)
+		sharednonce = RandomUint32()
+		noncedata[2] = sharednonce
+		flags = uint32(0)
+	} else if global && nonce {
 		noncedata[0] = RandomUint32()
 		noncedata[1] = RandomUint32()
 		sharednonce = RandomUint32()
@@ -189,16 +194,25 @@ func SendTemplateToNodes(data []byte, nonce bool, global bool, verbose bool) {
 			noncebytes := make([]byte, 4)
 			noncedata[2] = sharednonce + (65536 * (i * uint32(rv.threads)))
 			binary.BigEndian.PutUint32(noncebytes, noncedata[2])
-			err, randombytes := GetRandomByte(2)
-			if err {
-				fmt.Println("Error Retrieving random Bytes from cache")
+			randombytes, err := GetRandomByte(2)
+			if err != nil {
+				fmt.Println(err)
 			}
 			copy(noncebytes[2:], randombytes)
 			noncedata[2] = binary.BigEndian.Uint32(noncebytes)
+		} else if nonce && zero {
+			_, err := GetRandomByte(1)
+			if err != nil {
+				fmt.Println(err)
+			}
+			noncedata[0] = RandomUint32()
+			noncedata[1] = 0
+			noncedata[2] = RandomUint32()
+			flags = 0
 		} else if nonce {
-			err, _ := GetRandomByte(1)
-			if err {
-				fmt.Println("Error Retrieving random bytes from cache")
+			_, err := GetRandomByte(1)
+			if err != nil {
+				fmt.Println(err)
 			}
 			noncedata[0] = RandomUint32()
 			noncedata[1] = RandomUint32()
@@ -227,7 +241,7 @@ func RandomUint16() uint16 {
 	var chunk uint16
 
 	chunk_size := 2
-	_, random_blob := GetRandomByte(chunk_size)
+	random_blob, _ := GetRandomByte(chunk_size)
 	chunk = binary.BigEndian.Uint16(random_blob)
 	return chunk
 }
@@ -236,7 +250,7 @@ func RandomUint32() uint32 {
 	var chunk uint32
 
 	chunk_size := 4
-	_, random_blob := GetRandomByte(chunk_size)
+	random_blob, _ := GetRandomByte(chunk_size)
 	chunk = binary.BigEndian.Uint32(random_blob)
 	return chunk
 }
@@ -245,7 +259,7 @@ func RandomUint64() uint64 {
 	var chunk uint64
 
 	chunk_size := 8
-	_, random_blob := GetRandomByte(chunk_size)
+	random_blob, _ := GetRandomByte(chunk_size)
 	chunk = binary.BigEndian.Uint64(random_blob)
 	return chunk
 }
