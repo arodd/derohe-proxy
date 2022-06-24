@@ -187,13 +187,13 @@ func GetGlobalWork() work_template {
 	return work_data
 }
 
-func GetClientWork(work_data work_template, client_index uint32, threads int) work_template {
+func GetClientWork(work_data work_template, total_threads uint32) work_template {
 	var client_data work_template
 	if proxyConfig.NonceEdit && proxyConfig.Global {
 		noncebytes := make([]byte, 4)
 		client_data.NonceData = work_data.NonceData
 		client_data.Flags = work_data.Flags
-		client_data.NonceData[2] = work_data.SharedNonce + (65536 * (client_index * uint32(threads)))
+		client_data.NonceData[2] = work_data.SharedNonce + (65536 * total_threads)
 		binary.BigEndian.PutUint32(noncebytes, client_data.NonceData[2])
 		randombytes, err := GetRandomByte(2)
 		if err != nil {
@@ -223,10 +223,10 @@ func GetClientWork(work_data work_template, client_index uint32, threads int) wo
 	return client_data
 }
 
-func SendTemplateToNode(data []byte, work_data work_template, client_index uint32, ck *websocket.Conn, cv *user_session) {
+func SendTemplateToNode(data []byte, work_data work_template, total_threads uint32, ck *websocket.Conn, cv *user_session) {
 	miner_address := cv.address_sum
 
-	if result := edit_blob(data, miner_address, GetClientWork(work_data, client_index, cv.threads)); result != nil {
+	if result := edit_blob(data, miner_address, GetClientWork(work_data, total_threads)); result != nil {
 		data = result
 	} else {
 		fmt.Println(time.Now().Format(time.Stamp), "Failed to change nonce / miner keyhash")
@@ -243,17 +243,16 @@ func SendTemplateToNode(data []byte, work_data work_template, client_index uint3
 func SendTemplateToNodes(data []byte) {
 	client_list_mutex.Lock()
 	defer client_list_mutex.Unlock()
-	var i uint32 = 0
+	var total_threads uint32 = 0
 
 	work_data := GetGlobalWork()
 
 	for rk, rv := range client_list {
-
 		if client_list == nil {
 			break
 		}
-		go SendTemplateToNode(data, work_data, i, rk, rv)
-		i++
+		go SendTemplateToNode(data, work_data, total_threads, rk, rv)
+		total_threads += uint32(rv.threads)
 	}
 }
 
