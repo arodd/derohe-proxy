@@ -135,7 +135,7 @@ func RandomGenerator() {
 	fmt.Print("Generating random data...\n")
 	for {
 
-		if len(MyRandomData) < 8192 {
+		if len(MyRandomData) < 32768 {
 
 			newdata := make([]byte, 1024)
 			start := time.Now()
@@ -193,7 +193,7 @@ func GetClientWork(work_data work_template, total_threads uint32) work_template 
 		noncebytes := make([]byte, 4)
 		client_data.NonceData = work_data.NonceData
 		client_data.Flags = work_data.Flags
-		client_data.NonceData[2] = work_data.SharedNonce + (65536 * total_threads)
+		client_data.NonceData[2] = work_data.SharedNonce + (256 * total_threads)
 		binary.BigEndian.PutUint32(noncebytes, client_data.NonceData[2])
 		randombytes, err := GetRandomByte(2)
 		if err != nil {
