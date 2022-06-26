@@ -135,7 +135,7 @@ func RandomGenerator() {
 	fmt.Print("Generating random data...\n")
 	for {
 
-		if len(MyRandomData) < 8192 {
+		if len(MyRandomData) < 32768 {
 
 			newdata := make([]byte, 1024)
 			start := time.Now()
