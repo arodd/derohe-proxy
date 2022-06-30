@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net/url"
 	"strings"
 	"time"
@@ -26,8 +25,6 @@ func Start_client(w string) {
 	var jobs_per_block int
 	var jobtimer time.Time
 
-	rand.Seed(time.Now().UnixNano())
-
 	for {
 		u := url.URL{Scheme: "wss", Host: proxyConfig.DaemonAddr, Path: "/ws/" + w}
 
@@ -45,6 +42,7 @@ func Start_client(w string) {
 		}
 
 		var params rpc.GetBlockTemplate_Result
+		var lastjobid string
 
 		for {
 			msg_type, recv_data, err := connection.ReadMessage()
@@ -64,6 +62,10 @@ func Start_client(w string) {
 			Blocks = params.Blocks
 			Minis = params.MiniBlocks
 			Rejected = params.Rejected
+			if lastjobid == params.JobID {
+				continue
+			}
+			lastjobid = params.JobID
 
 			if proxyConfig.Minimal {
 				//finalblock := strings.HasPrefix(params.Blockhashing_blob, "71")
@@ -90,6 +92,7 @@ func Start_client(w string) {
 					}
 
 					jobs_per_block = 0
+
 					go SendTemplateToNodes(recv_data)
 					jobtimer = time.Now()
 					jobs_per_block++

@@ -21,6 +21,7 @@ var proxyConfig = config.ProxyConfig{
 	ZeroNonce:   false,
 	Verbose:     false,
 	JobRate:     (500 * time.Millisecond),
+	WalletFile:  false,
 }
 
 func main() {
@@ -91,6 +92,11 @@ func main() {
 		fmt.Printf("%v Global Nonce targeting is enabled\n", time.Now().Format(time.Stamp))
 	}
 
+	if config.Arguments["--walletfile"].(bool) {
+		proxyConfig.WalletFile = true
+		fmt.Printf("%v Global Wallet List Enabled\n", time.Now().Format(time.Stamp))
+	}
+
 	if config.Arguments["--verbose"].(bool) {
 		proxyConfig.Verbose = true
 		fmt.Printf("%v Verbose nonce output is enabled\n", time.Now().Format(time.Stamp))
@@ -98,18 +104,17 @@ func main() {
 
 	fmt.Printf("%v Logging every %d seconds\n", time.Now().Format(time.Stamp), proxyConfig.LogInterval)
 	fmt.Printf("%v Job Dispatch Rate: %s\n", time.Now().Format(time.Stamp), proxyConfig.JobRate.String())
-
-	go proxy.Start_server(proxyConfig)
-
-	// Wait for first miner connection to grab wallet address
-	for proxy.CountMiners() < 1 {
-		time.Sleep(time.Second * 1)
-	}
 	if proxyConfig.NonceEdit {
 		go proxy.RandomGenerator()
 
 		fmt.Print("Building random data for 10 sec...\n")
 		time.Sleep(time.Second * 10)
+	}
+	go proxy.Start_server(proxyConfig)
+
+	// Wait for first miner connection to grab wallet address
+	for proxy.CountMiners() < 1 {
+		time.Sleep(time.Second * 1)
 	}
 
 	go proxy.Start_client(proxy.Address)
