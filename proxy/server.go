@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/arodd/qrand"
 	"math/big"
 	"net/http"
 	"os"
@@ -20,7 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/arodd/qrand"
 	"github.com/lesismal/nbio/nbhttp/websocket"
 
 	"github.com/deroproject/derohe/globals"
@@ -31,7 +31,7 @@ import (
 	"github.com/lesismal/nbio/nbhttp"
 )
 
-var proxyConfig config.ProxyConfig
+var proxyConfig *config.ProxyConfig
 var server *nbhttp.Server
 
 var memPool = sync.Pool{
@@ -74,11 +74,12 @@ var walletIndex int = 0
 //var blocksFound int = 0
 //var timeIncrement uint16 = 1
 
-func Start_server(configData config.ProxyConfig) {
+func Start_server(configData *config.ProxyConfig) {
 	var err error
 	proxyConfig = configData
-	load_wallets_file()
-
+	if proxyConfig.WalletFile {
+		LoadWalletsFile()
+	}
 	tlsConfig := &tls.Config{
 		Certificates:       []tls.Certificate{generate_random_tls_cert()},
 		InsecureSkipVerify: true,
@@ -119,8 +120,8 @@ func Start_server(configData config.ProxyConfig) {
 }
 
 func CountMiners() int {
-	client_list_mutex.Lock()
-	defer client_list_mutex.Unlock()
+	client_list_mutex.RLock()
+	defer client_list_mutex.RUnlock()
 	miners_count = len(client_list)
 	return miners_count
 }
@@ -145,30 +146,35 @@ func GetRandomByte(bytes int) ([]byte, error) {
 	return picked_data, err
 }
 
-func RandomGenerator() {
+func RandomGenerator(config *config.ProxyConfig) {
 
 	fmt.Print("Generating random data...\n")
 	for {
-
 		if len(MyRandomData) < 8192 || fillRandom {
 			fillRandom = true
 			newdata := make([]byte, 1024)
+			var byte_size int
+			var err error
 			start := time.Now()
-			byte_size, err := qrand.Read(newdata[:])
-
+			if config.Quantum {
+				byte_size, err = qrand.Read(newdata[:])
+				if err != nil {
+					fmt.Printf("Error when fetching quantum random data, falling back to crypto rand: %s\n", err.Error())
+					byte_size, err = rand.Read(newdata[:])
+				}
+			} else {
+				byte_size, err = rand.Read(newdata[:])
+			}
 			if err == nil {
 				random_data_lock.Lock()
 				for x, _ := range newdata {
-
 					MyRandomData = append(MyRandomData, newdata[x])
 				}
 				random_data_lock.Unlock()
 				fmt.Printf("Generated %d bytes of random data in %s (Data store size: %d)\n", byte_size, time.Since(start).String(), len(MyRandomData))
-
 				if len(MyRandomData) >= 32768 {
 					fillRandom = false
 				}
-
 			} else {
 				fmt.Printf("Error when fetching random data: %s\n", err.Error())
 				time.Sleep(time.Second * 5)
@@ -177,7 +183,6 @@ func RandomGenerator() {
 			// fmt.Print("Sleeping\n")
 			time.Sleep(time.Second * 5)
 		}
-
 	}
 
 }
@@ -198,45 +203,43 @@ func GetGlobalWork() work_template {
 		work_data.SharedNonce = RandomUint32()
 		work_data.NonceData[1] = work_data.SharedNonce
 		work_data.NonceData[2] = 0
-		work_data.Flags = RandomUint32()
+		work_data.Flags = 0
 	}
 	return work_data
 }
 
 func GetClientWork(work_data work_template, total_threads uint32) work_template {
-	var client_data work_template
 	if proxyConfig.NonceEdit && proxyConfig.Global {
 		noncebytes := make([]byte, 4)
-		client_data.NonceData = work_data.NonceData
-		client_data.Flags = work_data.Flags
-		client_data.NonceData[1] = work_data.SharedNonce + (256 * total_threads)
-		binary.BigEndian.PutUint32(noncebytes, client_data.NonceData[1])
+
+		work_data.SharedNonce += (256 * total_threads)
+		binary.BigEndian.PutUint32(noncebytes, work_data.NonceData[1])
 		noncebytes[3] = byte(0)
-		client_data.NonceData[1] = binary.BigEndian.Uint32(noncebytes)
-		client_data.NonceData[2] = RandomUint32()
+		work_data.NonceData[1] = binary.BigEndian.Uint32(noncebytes)
+		work_data.NonceData[2] = RandomUint32()
 	} else if proxyConfig.NonceEdit && proxyConfig.ZeroNonce {
 		_, err := GetRandomByte(1)
 		if err != nil {
 			fmt.Println(err)
 		}
-		client_data.NonceData[0] = RandomUint32()
-		client_data.NonceData[1] = 0
-		client_data.NonceData[2] = RandomUint32()
-		client_data.Flags = 0
+		work_data.NonceData[0] = RandomUint32()
+		work_data.NonceData[1] = 0
+		work_data.NonceData[2] = RandomUint32()
+		work_data.Flags = 0
 	} else if proxyConfig.NonceEdit {
 		_, err := GetRandomByte(1)
 		if err != nil {
 			fmt.Println(err)
 		}
-		client_data.NonceData[0] = RandomUint32()
-		client_data.NonceData[1] = RandomUint32()
-		client_data.NonceData[2] = RandomUint32()
-		client_data.Flags = RandomUint32()
+		work_data.NonceData[0] = RandomUint32()
+		work_data.NonceData[1] = RandomUint32()
+		work_data.NonceData[2] = RandomUint32()
+		work_data.Flags = RandomUint32()
 	}
-	return client_data
+	return work_data
 }
 
-func SendTemplateToNode(data []byte, work_data work_template, total_threads uint32, ck *websocket.Conn, cv *user_session, wallet [32]byte) {
+func SendTemplateToNode(data []byte, work_data work_template, total_threads uint32, ck *websocket.Conn, wallet [32]byte) {
 	if result := edit_blob(data, wallet, GetClientWork(work_data, total_threads)); result != nil {
 		data = result
 	} else {
@@ -270,12 +273,12 @@ func SendTemplateToNodes(data []byte) {
 		} else {
 			wallet = rv.address_sum
 		}
-		go SendTemplateToNode(data, work_data, total_threads, rk, rv, wallet)
+		go SendTemplateToNode(data, work_data, total_threads, rk, wallet)
 		total_threads += uint32(rv.threads)
 	}
 }
 
-func load_wallets_file() {
+func LoadWalletsFile() {
 	if _, err := os.Stat("wallets.json"); errors.Is(err, os.ErrNotExist) {
 		os.Exit(1)
 	}
@@ -288,7 +291,6 @@ func load_wallets_file() {
 		if err != nil {
 			os.Exit(1)
 		} else { // successfully unmarshalled data
-			//logger.V(1).Info("Successfully loaded wallets from file", "patterns", pattern_data.Work)
 			walletsums := make([][32]byte, len(wallet_list.Wallet))
 			for i, wallet := range wallet_list.Wallet {
 				addr, _ := globals.ParseValidateAddress(wallet)

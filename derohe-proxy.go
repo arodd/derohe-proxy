@@ -22,6 +22,7 @@ var proxyConfig = config.ProxyConfig{
 	Verbose:     false,
 	JobRate:     (500 * time.Millisecond),
 	WalletFile:  false,
+	Quantum:     false,
 }
 
 func main() {
@@ -97,6 +98,11 @@ func main() {
 		fmt.Printf("%v Global Wallet List Enabled\n", time.Now().Format(time.Stamp))
 	}
 
+	if config.Arguments["--quantum"].(bool) {
+		proxyConfig.Quantum = true
+		fmt.Printf("%v Quantum Random Data Enabled...will fallback to crypto/rand if unavailable\n", time.Now().Format(time.Stamp))
+	}
+
 	if config.Arguments["--verbose"].(bool) {
 		proxyConfig.Verbose = true
 		fmt.Printf("%v Verbose nonce output is enabled\n", time.Now().Format(time.Stamp))
@@ -105,12 +111,12 @@ func main() {
 	fmt.Printf("%v Logging every %d seconds\n", time.Now().Format(time.Stamp), proxyConfig.LogInterval)
 	fmt.Printf("%v Job Dispatch Rate: %s\n", time.Now().Format(time.Stamp), proxyConfig.JobRate.String())
 	if proxyConfig.NonceEdit {
-		go proxy.RandomGenerator()
+		go proxy.RandomGenerator(&proxyConfig)
 
 		fmt.Print("Building random data for 10 sec...\n")
 		time.Sleep(time.Second * 10)
 	}
-	go proxy.Start_server(proxyConfig)
+	go proxy.Start_server(&proxyConfig)
 
 	// Wait for first miner connection to grab wallet address
 	for proxy.CountMiners() < 1 {
@@ -126,6 +132,9 @@ func main() {
 			if proxy.Wallet_count[i] > 1 {
 				fmt.Printf("%v Wallet %v, %d miners\n", time.Now().Format(time.Stamp), i, proxy.Wallet_count[i])
 			}
+		}
+		if proxyConfig.WalletFile {
+			proxy.LoadWalletsFile()
 		}
 	}
 }
