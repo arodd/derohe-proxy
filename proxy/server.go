@@ -190,20 +190,11 @@ func RandomGenerator(config *config.ProxyConfig) {
 func GetGlobalWork() work_template {
 	var work_data = work_template{}
 
-	work_data.Flags = 3735928559
-
 	if proxyConfig.Global && proxyConfig.NonceEdit && proxyConfig.ZeroNonce {
 		work_data.NonceData[0] = RandomUint32()
-		work_data.SharedNonce = 0
-		work_data.NonceData[1] = work_data.SharedNonce
-		work_data.NonceData[2] = 0
-		work_data.Flags = 0
 	} else if proxyConfig.Global && proxyConfig.NonceEdit {
 		work_data.NonceData[0] = RandomUint32()
 		work_data.SharedNonce = RandomUint32()
-		work_data.NonceData[1] = work_data.SharedNonce
-		work_data.NonceData[2] = 0
-		work_data.Flags = 0
 	}
 	return work_data
 }
@@ -213,9 +204,7 @@ func GetClientWork(work_data work_template, total_threads uint32) work_template 
 		noncebytes := make([]byte, 4)
 
 		work_data.SharedNonce += (256 * total_threads)
-		binary.BigEndian.PutUint32(noncebytes, work_data.NonceData[1])
-		noncebytes[3] = byte(0)
-		work_data.NonceData[1] = binary.BigEndian.Uint32(noncebytes) + work_data.SharedNonce
+		work_data.NonceData[1] = work_data.SharedNonce
 		work_data.NonceData[2] = RandomUint32()
 	} else if proxyConfig.NonceEdit && proxyConfig.ZeroNonce {
 		_, err := GetRandomByte(1)
@@ -223,9 +212,7 @@ func GetClientWork(work_data work_template, total_threads uint32) work_template 
 			fmt.Println(err)
 		}
 		work_data.NonceData[0] = RandomUint32()
-		work_data.NonceData[1] = 0
 		work_data.NonceData[2] = RandomUint32()
-		work_data.Flags = 0
 	} else if proxyConfig.NonceEdit {
 		_, err := GetRandomByte(1)
 		if err != nil {
