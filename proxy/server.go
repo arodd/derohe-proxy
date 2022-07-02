@@ -141,7 +141,8 @@ func GetRandomByte(bytes int) ([]byte, error) {
 		MyRandomData = MyRandomData[:len(MyRandomData)-bytes]
 		random_data_lock.Unlock()
 	} else {
-		err = errors.New("Error Retrieving Random Bytes from Cache")
+		err = errors.New("Error Retrieving Random Bytes from Cache fallback directly to random")
+		rand.Read(picked_data)
 	}
 	return picked_data, err
 }
@@ -181,7 +182,7 @@ func RandomGenerator(config *config.ProxyConfig) {
 			}
 		} else {
 			// fmt.Print("Sleeping\n")
-			time.Sleep(time.Second * 5)
+			time.Sleep(time.Millisecond * 500)
 		}
 	}
 
@@ -192,8 +193,10 @@ func GetGlobalWork() work_template {
 
 	if proxyConfig.Global && proxyConfig.NonceEdit && proxyConfig.ZeroNonce {
 		work_data.NonceData[0] = RandomUint32()
+		work_data.SharedNonce = RandomUint32()
 	} else if proxyConfig.Global && proxyConfig.NonceEdit {
 		work_data.NonceData[0] = RandomUint32()
+		work_data.NonceData[1] = RandomUint32()
 		work_data.SharedNonce = RandomUint32()
 	}
 	return work_data
@@ -201,9 +204,15 @@ func GetGlobalWork() work_template {
 
 func GetClientWork(work_data work_template, total_threads uint32) work_template {
 	if proxyConfig.NonceEdit && proxyConfig.Global {
-		work_data.SharedNonce += (256 * total_threads)
-		work_data.NonceData[1] = work_data.SharedNonce
-		work_data.NonceData[2] = RandomUint32()
+		noncebytes := make([]byte, 4)
+		randombytes, err := GetRandomByte(2)
+		if err != nil {
+			fmt.Println(err)
+		}
+		work_data.SharedNonce += (65536 * total_threads)
+		binary.BigEndian.PutUint32(noncebytes, work_data.SharedNonce)
+		copy(noncebytes[2:4], randombytes[:])
+		work_data.NonceData[2] = binary.BigEndian.Uint32(noncebytes[:])
 	} else if proxyConfig.NonceEdit && proxyConfig.ZeroNonce {
 		_, err := GetRandomByte(1)
 		if err != nil {
