@@ -201,8 +201,6 @@ func GetGlobalWork() work_template {
 
 func GetClientWork(work_data work_template, total_threads uint32) work_template {
 	if proxyConfig.NonceEdit && proxyConfig.Global {
-		noncebytes := make([]byte, 4)
-
 		work_data.SharedNonce += (256 * total_threads)
 		work_data.NonceData[1] = work_data.SharedNonce
 		work_data.NonceData[2] = RandomUint32()
