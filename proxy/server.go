@@ -54,6 +54,7 @@ type work_template struct {
 	NonceData   [3]uint32
 	Flags       uint32
 	SharedNonce uint32
+	BigNonce    [12]byte
 }
 
 type wallets struct {
@@ -162,9 +163,15 @@ func RandomGenerator(config *config.ProxyConfig) {
 				if err != nil {
 					fmt.Printf("Error when fetching quantum random data, falling back to crypto rand: %s\n", err.Error())
 					byte_size, err = rand.Read(newdata[:])
+					if err != nil {
+						fmt.Printf("Error when fetching crypto/rand random data, cache will be empty: %s\n", err.Error())
+					}
 				}
 			} else {
 				byte_size, err = rand.Read(newdata[:])
+				if err != nil {
+					fmt.Printf("Error when fetching crypto/rand random data, cache will be empty: %s\n", err.Error())
+				}
 			}
 			if err == nil {
 				random_data_lock.Lock()
@@ -190,50 +197,51 @@ func RandomGenerator(config *config.ProxyConfig) {
 
 func GetGlobalWork() work_template {
 	var work_data = work_template{}
-
 	if proxyConfig.Global && proxyConfig.NonceEdit && proxyConfig.ZeroNonce {
-		work_data.NonceData[0] = RandomUint32()
-		work_data.SharedNonce = RandomUint32()
+		randombytes, err := GetRandomByte(6)
+		if err != nil {
+			fmt.Println(err)
+		}
+		copy(work_data.BigNonce[:4], randombytes[:4])
+		copy(work_data.BigNonce[7:9], randombytes[4:6])
+		work_data.Flags = 0
 	} else if proxyConfig.Global && proxyConfig.NonceEdit {
-		work_data.NonceData[0] = RandomUint32()
-		work_data.NonceData[1] = RandomUint32()
-		work_data.SharedNonce = RandomUint32()
+		randombytes, err := GetRandomByte(9)
+		if err != nil {
+			fmt.Println(err)
+		}
+		copy(work_data.BigNonce[:9], randombytes[:])
+		work_data.Flags = 0
 	}
 	return work_data
 }
 
-func GetClientWork(work_data work_template, total_threads uint32) work_template {
+func GetClientWork(work_data work_template, total_threads uint16) work_template {
 	if proxyConfig.NonceEdit && proxyConfig.Global {
-		noncebytes := make([]byte, 4)
-		randombytes, err := GetRandomByte(2)
+		binary.BigEndian.PutUint16(work_data.BigNonce[7:9], binary.BigEndian.Uint16(work_data.BigNonce[7:9])+total_threads)
+		randombytes, err := GetRandomByte(3)
 		if err != nil {
 			fmt.Println(err)
 		}
-		work_data.SharedNonce += (65536 * total_threads)
-		binary.BigEndian.PutUint32(noncebytes, work_data.SharedNonce)
-		copy(noncebytes[2:4], randombytes[:])
-		work_data.NonceData[2] = binary.BigEndian.Uint32(noncebytes[:])
+		copy(work_data.BigNonce[9:12], randombytes[:])
 	} else if proxyConfig.NonceEdit && proxyConfig.ZeroNonce {
-		_, err := GetRandomByte(1)
+		randombytes, err := GetRandomByte(8)
 		if err != nil {
 			fmt.Println(err)
 		}
-		work_data.NonceData[0] = RandomUint32()
-		work_data.NonceData[2] = RandomUint32()
+		copy(work_data.BigNonce[:4], randombytes[:4])
+		copy(work_data.BigNonce[8:12], randombytes[4:8])
 	} else if proxyConfig.NonceEdit {
-		_, err := GetRandomByte(1)
+		randombytes, err := GetRandomByte(12)
 		if err != nil {
 			fmt.Println(err)
 		}
-		work_data.NonceData[0] = RandomUint32()
-		work_data.NonceData[1] = RandomUint32()
-		work_data.NonceData[2] = RandomUint32()
-		work_data.Flags = RandomUint32()
+		copy(work_data.BigNonce[:12], randombytes[:])
 	}
 	return work_data
 }
 
-func SendTemplateToNode(data []byte, work_data work_template, total_threads uint32, ck *websocket.Conn, wallet [32]byte) {
+func SendTemplateToNode(data []byte, work_data work_template, total_threads uint16, ck *websocket.Conn, wallet [32]byte) {
 	if result := edit_blob(data, wallet, GetClientWork(work_data, total_threads)); result != nil {
 		data = result
 	} else {
@@ -248,7 +256,7 @@ func SendTemplateToNode(data []byte, work_data work_template, total_threads uint
 
 // forward all incoming templates from daemon to all miners
 func SendTemplateToNodes(data []byte) {
-	var total_threads uint32 = 0
+	var total_threads uint16 = 0
 	var wallet [32]byte
 	work_data := GetGlobalWork()
 	client_list_mutex.RLock()
@@ -268,7 +276,7 @@ func SendTemplateToNodes(data []byte) {
 			wallet = rv.address_sum
 		}
 		go SendTemplateToNode(data, work_data, total_threads, rk, wallet)
-		total_threads += uint32(rv.threads)
+		total_threads += uint16(rv.threads)
 	}
 }
 
@@ -294,33 +302,6 @@ func LoadWalletsFile() {
 			wallet_list.WalletSum = walletsums
 		}
 	}
-}
-
-func RandomUint16() uint16 {
-	var chunk uint16
-
-	chunk_size := 2
-	random_blob, _ := GetRandomByte(chunk_size)
-	chunk = binary.BigEndian.Uint16(random_blob)
-	return chunk
-}
-
-func RandomUint32() uint32 {
-	var chunk uint32
-
-	chunk_size := 4
-	random_blob, _ := GetRandomByte(chunk_size)
-	chunk = binary.BigEndian.Uint32(random_blob)
-	return chunk
-}
-
-func RandomUint64() uint64 {
-	var chunk uint64
-
-	chunk_size := 8
-	random_blob, _ := GetRandomByte(chunk_size)
-	chunk = binary.BigEndian.Uint64(random_blob)
-	return chunk
 }
 
 // handling for incoming miner connections

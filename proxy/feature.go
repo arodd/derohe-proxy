@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -35,9 +36,9 @@ func edit_blob(input []byte, miner [32]byte, client_data work_template) (output 
 
 	// Insert random nonce
 	if proxyConfig.NonceEdit {
-		for i := range mbl.Nonce {
-			mbl.Nonce[i] = client_data.NonceData[i]
-		}
+		mbl.Nonce[0] = binary.BigEndian.Uint32(client_data.BigNonce[:4])
+		mbl.Nonce[1] = binary.BigEndian.Uint32(client_data.BigNonce[4:8])
+		mbl.Nonce[2] = binary.BigEndian.Uint32(client_data.BigNonce[8:])
 	}
 
 	mbl.Flags = client_data.Flags
