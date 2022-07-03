@@ -12,7 +12,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/arodd/qrand"
+	"github.com/lesismal/nbio/nbhttp/websocket"
 	"math/big"
+	mrand "math/rand"
 	"net/http"
 	"os"
 	"runtime"
@@ -20,8 +22,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/lesismal/nbio/nbhttp/websocket"
 
 	"github.com/deroproject/derohe/globals"
 	"github.com/deroproject/derohe/rpc"
@@ -55,6 +55,7 @@ type work_template struct {
 	Flags       uint32
 	SharedNonce uint32
 	BigNonce    [12]byte
+	Timestamp   [2]byte
 }
 
 type wallets struct {
@@ -78,6 +79,7 @@ var walletIndex int = 0
 func Start_server(configData *config.ProxyConfig) {
 	var err error
 	proxyConfig = configData
+	mrand.Seed(time.Now().UnixNano())
 	if proxyConfig.WalletFile {
 		LoadWalletsFile()
 	}
@@ -142,8 +144,11 @@ func GetRandomByte(bytes int) ([]byte, error) {
 		MyRandomData = MyRandomData[:len(MyRandomData)-bytes]
 		random_data_lock.Unlock()
 	} else {
-		err = errors.New("Error Retrieving Random Bytes from Cache fallback directly to random")
-		rand.Read(picked_data)
+		err = errors.New("Error Retrieving Random Bytes from Cache fallback directly to random source")
+		_, err = rand.Read(picked_data)
+		if err != nil {
+			mrand.Read(picked_data)
+		}
 	}
 	return picked_data, err
 }
@@ -164,13 +169,15 @@ func RandomGenerator(config *config.ProxyConfig) {
 					fmt.Printf("Error when fetching quantum random data, falling back to crypto rand: %s\n", err.Error())
 					byte_size, err = rand.Read(newdata[:])
 					if err != nil {
-						fmt.Printf("Error when fetching crypto/rand random data, cache will be empty: %s\n", err.Error())
+						fmt.Printf("Error when fetching crypto/rand random data falling back to math/rand: %s\n", err.Error())
+						byte_size, err = mrand.Read(newdata[:])
 					}
 				}
 			} else {
 				byte_size, err = rand.Read(newdata[:])
 				if err != nil {
-					fmt.Printf("Error when fetching crypto/rand random data, cache will be empty: %s\n", err.Error())
+					fmt.Printf("Error when fetching crypto/rand random data falling back to math/rand: %s\n", err.Error())
+					byte_size, err = mrand.Read(newdata[:])
 				}
 			}
 			if err == nil {
@@ -197,6 +204,10 @@ func RandomGenerator(config *config.ProxyConfig) {
 
 func GetGlobalWork() work_template {
 	var work_data = work_template{}
+	timestamp := make([]byte, 2)
+	timestamp[0] = byte(mrand.Intn(255-160+1) + 160)
+	copy(work_data.Timestamp[:], timestamp[:])
+
 	if proxyConfig.Global && proxyConfig.NonceEdit && proxyConfig.ZeroNonce {
 		randombytes, err := GetRandomByte(6)
 		if err != nil {

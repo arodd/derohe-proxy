@@ -42,9 +42,7 @@ func edit_blob(input []byte, miner [32]byte, client_data work_template) (output 
 	}
 
 	mbl.Flags = client_data.Flags
-	//timestamp := uint64(globals.Time().UTC().UnixMilli())
-	mbl.Timestamp = uint16(4096) // this will help us better understand network conditions
-
+	mbl.Timestamp = binary.BigEndian.Uint16(client_data.Timestamp[:])
 	params.Blockhashing_blob = fmt.Sprintf("%x", mbl.Serialize())
 	encoder := json.NewEncoder(&out)
 	if proxyConfig.Verbose {
