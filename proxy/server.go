@@ -159,43 +159,50 @@ func GetRandomByte(bytes int) ([]byte, error) {
 
 func RandomGenerator(config *config.ProxyConfig) {
 
+	chunk_size := 819200
+
 	fmt.Print("Generating random data...\n")
 	for {
-		if len(MyRandomData) < 8192 || fillRandom {
+		random_data_lock.Lock()
+
+		if len(MyRandomData) < chunk_size || fillRandom {
+
 			fillRandom = true
 			newdata := make([]byte, 1024)
-			var byte_size int
+			// var byte_size int
 			var err error
-			start := time.Now()
+			// start := time.Now()
 			if config.Quantum {
-				byte_size, err = qrand.Read(newdata[:])
+				_, err = qrand.Read(newdata[:])
 				if err != nil {
 					fmt.Printf("Error when fetching quantum random data, falling back to crypto rand: %s\n", err.Error())
-					byte_size, err = rand.Read(newdata[:])
+					_, err = rand.Read(newdata[:])
 				}
 			} else {
-				byte_size, err = rand.Read(newdata[:])
+				_, err = rand.Read(newdata[:])
 			}
 			if err == nil {
-				random_data_lock.Lock()
 				for x, _ := range newdata {
 					MyRandomData = append(MyRandomData, newdata[x])
 				}
-				random_data_lock.Unlock()
-				fmt.Printf("Generated %d bytes of random data in %s (Data store size: %d)\n", byte_size, time.Since(start).String(), len(MyRandomData))
-				if len(MyRandomData) >= 32768 {
+				// fmt.Printf("Generated %d bytes of random data in %s (Data store size: %d)\n", byte_size, time.Since(start).String(), len(MyRandomData))
+				if len(MyRandomData) >= chunk_size*10 {
 					fillRandom = false
 				}
 			} else {
 				fmt.Printf("Error when fetching random data: %s\n", err.Error())
 				time.Sleep(time.Second * 5)
 			}
+
+			random_data_lock.Unlock()
 		} else {
+			random_data_lock.Unlock()
+
 			// fmt.Print("Sleeping\n")
 			time.Sleep(time.Second * 5)
 		}
-	}
 
+	}
 }
 
 func GetGlobalWork() work_template {
