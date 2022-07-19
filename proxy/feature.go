@@ -5,12 +5,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math/rand"
-
 	"github.com/deroproject/derohe/block"
 )
 
-func edit_blob(input []byte, miner [32]byte, nonce bool) (output []byte) {
+func edit_blob(input []byte, miner [32]byte, client_data work_template) (output []byte) {
 	var err error
 	var params GetBlockTemplate_Result
 	var mbl block.MiniBlock
@@ -35,17 +33,22 @@ func edit_blob(input []byte, miner [32]byte, nonce bool) (output []byte) {
 	}
 
 	// Insert random nonce
-	if nonce {
+	if proxyConfig.NonceEdit {
 		for i := range mbl.Nonce {
-			mbl.Nonce[i] = rand.Uint32()
+			mbl.Nonce[i] = client_data.NonceData[i]
 		}
 	}
 
-	mbl.Flags = 3735928559 // ;)
+	mbl.Flags = client_data.Flags
+	//timestamp := uint64(globals.Time().UTC().UnixMilli())
+	mbl.Timestamp = uint16(4096) // this will help us better understand network conditions
 
 	params.Blockhashing_blob = fmt.Sprintf("%x", mbl.Serialize())
 	encoder := json.NewEncoder(&out)
-
+	if proxyConfig.Verbose {
+		line := fmt.Sprintf("Height: %d Difficulty: %s Work %08x%08x%08x%08x", params.Height, params.Difficulty, mbl.Flags, mbl.Nonce[0], mbl.Nonce[1], mbl.Nonce[2])
+		fmt.Println(line)
+	}
 	if err = encoder.Encode(params); err != nil {
 		return
 	}

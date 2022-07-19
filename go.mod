@@ -3,7 +3,6 @@ module derohe-proxy
 go 1.18
 
 require (
-	github.com/chzyer/readline v1.5.0
 	github.com/deroproject/derohe v0.0.0-20220502125456-607af6dfdc9a
 	github.com/deroproject/graviton v0.0.0-20220130070622-2c248a53b2e1
 	github.com/docopt/docopt-go v0.0.0-20180111231733-ee0de3bc6815
@@ -13,6 +12,7 @@ require (
 )
 
 require (
+	github.com/arodd/qrand v0.2.3 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/caarlos0/env/v6 v6.9.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect

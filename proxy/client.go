@@ -4,8 +4,8 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -45,23 +45,22 @@ var ModdedNode bool = false
 var Hashrate float64
 
 // proxy-client
-func Start_client(v string, w string, min_jobs bool, nonce bool) {
+func Start_client(w string) {
 	var err error
 	var last_diff uint64
 	var last_height uint64
-
-	rand.Seed(time.Now().UnixMilli())
+	var jobs_per_block int
+	var jobtimer time.Time
 
 	for {
-
-		u := url.URL{Scheme: "wss", Host: v, Path: "/ws/" + w}
+		u := url.URL{Scheme: "wss", Host: proxyConfig.DaemonAddr, Path: "/ws/" + w}
 
 		dialer := websocket.DefaultDialer
 		dialer.TLSClientConfig = &tls.Config{
 			InsecureSkipVerify: true,
 		}
 
-		fmt.Println(time.Now().Format(time.Stamp), "Connected to node", v)
+		fmt.Println(time.Now().Format(time.Stamp), "Connected to node", proxyConfig.DaemonAddr)
 		connection, _, err = websocket.DefaultDialer.Dial(u.String(), nil)
 		if err != nil {
 			time.Sleep(5 * time.Second)
@@ -70,9 +69,11 @@ func Start_client(v string, w string, min_jobs bool, nonce bool) {
 		}
 
 		var params GetBlockTemplate_Result
+		var lastjobid string
 
 		for {
 			msg_type, recv_data, err := connection.ReadMessage()
+
 			if err != nil {
 				break
 			}
@@ -88,6 +89,7 @@ func Start_client(v string, w string, min_jobs bool, nonce bool) {
 			Blocks = params.Blocks
 			Minis = params.MiniBlocks
 			Rejected = params.Rejected
+
 			Orphans = params.Orphans
 
 			if ModdedNode != params.Hansen33Mod {
@@ -100,17 +102,54 @@ func Start_client(v string, w string, min_jobs bool, nonce bool) {
 			if !ModdedNode {
 				fmt.Print("Official Mining Node Detected - Happy Mining\n")
 			}
-			if min_jobs {
-				if params.Height != last_height || params.Difficultyuint64 != last_diff {
+
+			if lastjobid == params.JobID {
+				continue
+			}
+			lastjobid = params.JobID
+
+			if proxyConfig.Minimal {
+				//finalblock := strings.HasPrefix(params.Blockhashing_blob, "71")
+				if params.Height != last_height || params.Difficultyuint64 != last_diff { //need to add working finalblock check for more jobs on final blocks
 					last_height = params.Height
 					last_diff = params.Difficultyuint64
-					go SendTemplateToNodes(recv_data, nonce)
+					go SendTemplateToNodes(recv_data)
 				}
+
 			} else {
-				go SendTemplateToNodes(recv_data, nonce)
+				if params.Difficultyuint64 != last_diff {
+					last_height = params.Height
+					last_diff = params.Difficultyuint64
+
+					finalblock := strings.HasPrefix(params.Blockhashing_blob, "71")
+					if proxyConfig.Verbose {
+						if finalblock {
+							fmt.Printf("Jobs per mini: %d\n", jobs_per_block)
+
+						} else {
+							fmt.Printf("Jobs per final: %d\n", jobs_per_block)
+
+						}
+					}
+
+					jobs_per_block = 0
+
+					go SendTemplateToNodes(recv_data)
+					jobtimer = time.Now()
+					jobs_per_block++
+				} else {
+					if time.Since(jobtimer) > proxyConfig.JobRate {
+						go SendTemplateToNodes(recv_data)
+						jobtimer = time.Now()
+						jobs_per_block++
+					}
+				}
+
 			}
+
 		}
 	}
+
 }
 
 func SendUpdateToDaemon() {

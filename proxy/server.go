@@ -5,15 +5,24 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"derohe-proxy/config"
+	"encoding/binary"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
+	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/arodd/qrand"
+
+	"github.com/lesismal/nbio/nbhttp/websocket"
 
 	"github.com/deroproject/derohe/globals"
 	"github.com/deroproject/derohe/rpc"
@@ -21,9 +30,9 @@ import (
 	"github.com/lesismal/llib/std/crypto/tls"
 	"github.com/lesismal/nbio"
 	"github.com/lesismal/nbio/nbhttp"
-	"github.com/lesismal/nbio/nbhttp/websocket"
 )
 
+var proxyConfig *config.ProxyConfig
 var server *nbhttp.Server
 
 var memPool = sync.Pool{
@@ -41,8 +50,8 @@ type user_session struct {
 	hashrate      float64
 	valid_address bool
 	address_sum   [32]byte
+	threads       int
 }
-
 type ( // array without name containing block template in hex
 	MinerInfo_Params struct {
 		Wallet_Address string  `json:"wallet_address"`
@@ -52,17 +61,36 @@ type ( // array without name containing block template in hex
 	MinerInfo_Result struct {
 	}
 )
+type work_template struct {
+	NonceData   [3]uint32
+	Flags       uint32
+	SharedNonce uint32
+}
 
-var client_list_mutex sync.Mutex
+type wallets struct {
+	Wallet    []string
+	WalletSum [][32]byte
+}
+
+var client_list_mutex sync.RWMutex
 var client_list = map[*websocket.Conn]*user_session{}
 
 var miners_count int
 var Wallet_count map[string]uint
 var Address string
 
-func Start_server(listen string) {
-	var err error
+var wallet_list = wallets{}
+var walletIndex int = 0
 
+//var blocksFound int = 0
+//var timeIncrement uint16 = 1
+
+func Start_server(configData *config.ProxyConfig) {
+	var err error
+	proxyConfig = configData
+	if proxyConfig.WalletFile {
+		LoadWalletsFile()
+	}
 	tlsConfig := &tls.Config{
 		Certificates:       []tls.Certificate{generate_random_tls_cert()},
 		InsecureSkipVerify: true,
@@ -74,7 +102,7 @@ func Start_server(listen string) {
 	server = nbhttp.NewServer(nbhttp.Config{
 		Name:                    "GETWORK",
 		Network:                 "tcp",
-		AddrsTLS:                []string{listen},
+		AddrsTLS:                []string{proxyConfig.ListenAddr},
 		TLSConfig:               tlsConfig,
 		Handler:                 mux,
 		MaxLoad:                 10 * 1024,
@@ -103,55 +131,225 @@ func Start_server(listen string) {
 }
 
 func CountMiners() int {
-	client_list_mutex.Lock()
-	defer client_list_mutex.Unlock()
+	client_list_mutex.RLock()
+	defer client_list_mutex.RUnlock()
 	miners_count = len(client_list)
 	return miners_count
 }
 
-// forward all incoming templates from daemon to all miners
-func SendTemplateToNodes(data []byte, nonce bool) {
+var random_data_lock sync.RWMutex
 
-	client_list_mutex.Lock()
-	defer client_list_mutex.Unlock()
+var MyRandomData []byte
+var fillRandom bool = true
 
-	for rk, rv := range client_list {
+func GetRandomByte(bytes int) ([]byte, error) {
+	var err error
 
-		if client_list == nil {
-			break
-		}
+	picked_data := make([]byte, bytes)
+	if len(MyRandomData) > bytes {
+		random_data_lock.Lock()
+		picked_data = MyRandomData[len(MyRandomData)-bytes:]
+		MyRandomData = MyRandomData[:len(MyRandomData)-bytes]
+		random_data_lock.Unlock()
+	} else {
+		err = errors.New("Error Retrieving Random Bytes from Cache")
+	}
+	return picked_data, err
+}
 
-		miner_address := rv.address_sum
+func RandomGenerator(config *config.ProxyConfig) {
 
-		if result := edit_blob(data, miner_address, nonce); result != nil {
-			data = result
+	fmt.Print("Generating random data...\n")
+	for {
+		if len(MyRandomData) < 8192 || fillRandom {
+			fillRandom = true
+			newdata := make([]byte, 1024)
+			var byte_size int
+			var err error
+			start := time.Now()
+			if config.Quantum {
+				byte_size, err = qrand.Read(newdata[:])
+				if err != nil {
+					fmt.Printf("Error when fetching quantum random data, falling back to crypto rand: %s\n", err.Error())
+					byte_size, err = rand.Read(newdata[:])
+				}
+			} else {
+				byte_size, err = rand.Read(newdata[:])
+			}
+			if err == nil {
+				random_data_lock.Lock()
+				for x, _ := range newdata {
+					MyRandomData = append(MyRandomData, newdata[x])
+				}
+				random_data_lock.Unlock()
+				fmt.Printf("Generated %d bytes of random data in %s (Data store size: %d)\n", byte_size, time.Since(start).String(), len(MyRandomData))
+				if len(MyRandomData) >= 32768 {
+					fillRandom = false
+				}
+			} else {
+				fmt.Printf("Error when fetching random data: %s\n", err.Error())
+				time.Sleep(time.Second * 5)
+			}
 		} else {
-			fmt.Println(time.Now().Format(time.Stamp), "Failed to change nonce / miner keyhash")
+			// fmt.Print("Sleeping\n")
+			time.Sleep(time.Second * 5)
 		}
-
-		go func(k *websocket.Conn, v *user_session) {
-			defer globals.Recover(2)
-			k.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
-			k.WriteMessage(websocket.TextMessage, data)
-
-		}(rk, rv)
-
 	}
 
 }
 
+func GetGlobalWork() work_template {
+	var work_data = work_template{}
+
+	if proxyConfig.Global && proxyConfig.NonceEdit && proxyConfig.ZeroNonce {
+		work_data.NonceData[0] = RandomUint32()
+	} else if proxyConfig.Global && proxyConfig.NonceEdit {
+		work_data.NonceData[0] = RandomUint32()
+		work_data.SharedNonce = RandomUint32()
+	}
+	return work_data
+}
+
+func GetClientWork(work_data work_template, total_threads uint32) work_template {
+	if proxyConfig.NonceEdit && proxyConfig.Global {
+		work_data.SharedNonce += (256 * total_threads)
+		work_data.NonceData[1] = work_data.SharedNonce
+		work_data.NonceData[2] = RandomUint32()
+	} else if proxyConfig.NonceEdit && proxyConfig.ZeroNonce {
+		_, err := GetRandomByte(1)
+		if err != nil {
+			fmt.Println(err)
+		}
+		work_data.NonceData[0] = RandomUint32()
+		work_data.NonceData[2] = RandomUint32()
+	} else if proxyConfig.NonceEdit {
+		_, err := GetRandomByte(1)
+		if err != nil {
+			fmt.Println(err)
+		}
+		work_data.NonceData[0] = RandomUint32()
+		work_data.NonceData[1] = RandomUint32()
+		work_data.NonceData[2] = RandomUint32()
+		work_data.Flags = RandomUint32()
+	}
+	return work_data
+}
+
+func SendTemplateToNode(data []byte, work_data work_template, total_threads uint32, ck *websocket.Conn, wallet [32]byte) {
+	if result := edit_blob(data, wallet, GetClientWork(work_data, total_threads)); result != nil {
+		data = result
+	} else {
+		fmt.Println(time.Now().Format(time.Stamp), "Failed to change nonce / miner keyhash")
+	}
+	client_list_mutex.Lock()
+	defer globals.Recover(2)
+	ck.SetWriteDeadline(time.Now().Add(200 * time.Millisecond))
+	ck.WriteMessage(websocket.TextMessage, data)
+	client_list_mutex.Unlock()
+}
+
+// forward all incoming templates from daemon to all miners
+func SendTemplateToNodes(data []byte) {
+	var total_threads uint32 = 0
+	var wallet [32]byte
+	work_data := GetGlobalWork()
+	client_list_mutex.RLock()
+	defer client_list_mutex.RUnlock()
+	if walletIndex < (len(wallet_list.Wallet)-1) && proxyConfig.WalletFile {
+		walletIndex++
+	} else {
+		walletIndex = 0
+	}
+	for rk, rv := range client_list {
+		if client_list == nil {
+			break
+		}
+		if proxyConfig.WalletFile {
+			wallet = wallet_list.WalletSum[walletIndex]
+		} else {
+			wallet = rv.address_sum
+		}
+		go SendTemplateToNode(data, work_data, total_threads, rk, wallet)
+		total_threads += uint32(rv.threads)
+	}
+}
+
+func LoadWalletsFile() {
+	if _, err := os.Stat("wallets.json"); errors.Is(err, os.ErrNotExist) {
+		os.Exit(1)
+	}
+	file, err := os.Open("wallets.json")
+	if err != nil {
+	} else {
+		defer file.Close()
+		decoder := json.NewDecoder(file)
+		err = decoder.Decode(&wallet_list)
+		if err != nil {
+			os.Exit(1)
+		} else { // successfully unmarshalled data
+			walletsums := make([][32]byte, len(wallet_list.Wallet))
+			for i, wallet := range wallet_list.Wallet {
+				addr, _ := globals.ParseValidateAddress(wallet)
+				addr_raw := addr.PublicKey.EncodeCompressed()
+				walletsums[i] = graviton.Sum(addr_raw)
+			}
+			wallet_list.WalletSum = walletsums
+		}
+	}
+}
+
+func RandomUint16() uint16 {
+	var chunk uint16
+
+	chunk_size := 2
+	random_blob, _ := GetRandomByte(chunk_size)
+	chunk = binary.BigEndian.Uint16(random_blob)
+	return chunk
+}
+
+func RandomUint32() uint32 {
+	var chunk uint32
+
+	chunk_size := 4
+	random_blob, _ := GetRandomByte(chunk_size)
+	chunk = binary.BigEndian.Uint32(random_blob)
+	return chunk
+}
+
+func RandomUint64() uint64 {
+	var chunk uint64
+
+	chunk_size := 8
+	random_blob, _ := GetRandomByte(chunk_size)
+	chunk = binary.BigEndian.Uint64(random_blob)
+	return chunk
+}
+
 // handling for incoming miner connections
 func onWebsocket(w http.ResponseWriter, r *http.Request) {
+	var address string
+	var threads int
 	if !strings.HasPrefix(r.URL.Path, "/ws/") {
 		http.NotFound(w, r)
 		return
 	}
-	address := strings.TrimPrefix(r.URL.Path, "/ws/")
+	url := strings.TrimPrefix(r.URL.Path, "/ws/")
+	if strings.Contains(url, "/") {
+		values := strings.Split(url, "/")
+		address = values[0]
+		threadstmp, _ := strconv.Atoi(values[1])
+		threads = threadstmp
+
+	} else {
+		address = url
+		threads = 16
+	}
 
 	addr, err := globals.ParseValidateAddress(address)
 	if err != nil {
-		fmt.Fprintf(w, "err: %s\n", err)
-		return
+		// Ignore errors for testnet vs. mainnet
+		// fmt.Fprintf(w, "err: %s\n", err)
+		// return
 	}
 
 	upgrader := newUpgrader()
@@ -164,7 +362,7 @@ func onWebsocket(w http.ResponseWriter, r *http.Request) {
 	addr_raw := addr.PublicKey.EncodeCompressed()
 	wsConn := conn.(*websocket.Conn)
 
-	session := user_session{address: *addr, address_sum: graviton.Sum(addr_raw)}
+	session := user_session{address: *addr, address_sum: graviton.Sum(addr_raw), threads: threads}
 	wsConn.SetSession(&session)
 
 	client_list_mutex.Lock()
@@ -172,7 +370,7 @@ func onWebsocket(w http.ResponseWriter, r *http.Request) {
 	client_list[wsConn] = &session
 	Wallet_count[client_list[wsConn].address.String()]++
 	Address = address
-	fmt.Printf("%v Incoming connection: %v, Wallet: %v\n", time.Now().Format(time.Stamp), wsConn.RemoteAddr().String(), address)
+	fmt.Printf("%v Incoming connection: %v, Wallet: %v Threads: %v\n", time.Now().Format(time.Stamp), wsConn.RemoteAddr().String(), address, threads)
 }
 
 // forward results to daemon
