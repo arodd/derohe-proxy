@@ -161,9 +161,10 @@ func SendUpdateToDaemon() {
 				time.Sleep(60 * time.Second)
 			}
 
-			connection.WriteJSON(MinerInfo_Params{Wallet_Address: Address, Miner_Tag: "", Miner_Hashrate: Hashrate})
-
-			count++
+			if connection != nil {
+				connection.WriteJSON(MinerInfo_Params{Wallet_Address: Address, Miner_Tag: "", Miner_Hashrate: Hashrate})
+				count++
+			}
 		}
 		time.Sleep(10 * time.Second)
 	}
