@@ -8,14 +8,41 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deroproject/derohe/rpc"
 	"github.com/gorilla/websocket"
+)
+
+type (
+	GetBlockTemplate_Params struct {
+		Wallet_Address string `json:"wallet_address"`
+		Block          bool   `json:"block"`
+		Miner          string `json:"miner"`
+	}
+	GetBlockTemplate_Result struct {
+		JobID              string `json:"jobid"`
+		Blocktemplate_blob string `json:"blocktemplate_blob,omitempty"`
+		Blockhashing_blob  string `json:"blockhashing_blob,omitempty"`
+		Difficulty         string `json:"difficulty"`
+		Difficultyuint64   uint64 `json:"difficultyuint64"`
+		Height             uint64 `json:"height"`
+		Prev_Hash          string `json:"prev_hash"`
+		EpochMilli         uint64 `json:"epochmilli"`
+		Blocks             uint64 `json:"blocks"`     // number of blocks found
+		MiniBlocks         uint64 `json:"miniblocks"` // number of miniblocks found
+		Rejected           uint64 `json:"rejected"`   // reject count
+		LastError          string `json:"lasterror"`  // last error
+		Status             string `json:"status"`
+		Orphans            uint64 `json:"orphans"`
+		Hansen33Mod        bool   `json:"hansen33_mod"`
+	}
 )
 
 var connection *websocket.Conn
 var Blocks uint64
 var Minis uint64
 var Rejected uint64
+var Orphans uint64
+var ModdedNode bool = false
+var Hashrate float64
 
 // proxy-client
 func Start_client(w string) {
@@ -41,7 +68,7 @@ func Start_client(w string) {
 			continue
 		}
 
-		var params rpc.GetBlockTemplate_Result
+		var params GetBlockTemplate_Result
 		var lastjobid string
 
 		for {
@@ -62,6 +89,20 @@ func Start_client(w string) {
 			Blocks = params.Blocks
 			Minis = params.MiniBlocks
 			Rejected = params.Rejected
+
+			Orphans = params.Orphans
+
+			if ModdedNode != params.Hansen33Mod {
+				if params.Hansen33Mod {
+					fmt.Print("Hansen33 Mod Mining Node Detected - Happy Mining\n")
+				}
+			}
+			ModdedNode = params.Hansen33Mod
+
+			if !ModdedNode {
+				fmt.Print("Official Mining Node Detected - Happy Mining\n")
+			}
+
 			if lastjobid == params.JobID {
 				continue
 			}
@@ -109,6 +150,24 @@ func Start_client(w string) {
 		}
 	}
 
+}
+
+func SendUpdateToDaemon() {
+
+	var count = 0
+	for {
+		if ModdedNode {
+			if count == 0 {
+				time.Sleep(60 * time.Second)
+			}
+
+			if connection != nil {
+				connection.WriteJSON(MinerInfo_Params{Wallet_Address: Address, Miner_Tag: "", Miner_Hashrate: Hashrate})
+				count++
+			}
+		}
+		time.Sleep(10 * time.Second)
+	}
 }
 
 func SendToDaemon(buffer []byte) {

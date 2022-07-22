@@ -11,7 +11,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"github.com/arodd/qrand"
 	"math/big"
 	mrand "math/rand"
 	"net/http"
@@ -21,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/arodd/qrand"
 
 	"github.com/lesismal/nbio/nbhttp/websocket"
 
@@ -46,11 +47,21 @@ type user_session struct {
 	miniblocks    uint64
 	lasterr       string
 	address       rpc.Address
+	orphans       uint64
+	hashrate      float64
 	valid_address bool
 	address_sum   [32]byte
 	threads       int
 }
-
+type ( // array without name containing block template in hex
+	MinerInfo_Params struct {
+		Wallet_Address string  `json:"wallet_address"`
+		Miner_Tag      string  `json:"miner_tag"`
+		Miner_Hashrate float64 `json:"miner_hashrate"`
+	}
+	MinerInfo_Result struct {
+	}
+)
 type work_template struct {
 	NonceData   [3]uint32
 	Flags       uint32
@@ -386,19 +397,27 @@ func newUpgrader() *websocket.Upgrader {
 		client_list_mutex.Lock()
 		defer client_list_mutex.Unlock()
 
-		SendToDaemon(data)
-		fmt.Printf("%v Submitting result from miner: %v, Wallet: %v\n", time.Now().Format(time.Stamp), c.RemoteAddr().String(), client_list[c].address.String())
-		/*if blocksFound < 2 {
-			blocksFound += 1
-		} else {
-			blocksFound = 0
-			if timeIncrement < 15 {
-				timeIncrement += 1
-			} else {
-				timeIncrement = 1
-			}
-		}*/
+		var x MinerInfo_Params
+		if json.Unmarshal(data, &x); len(x.Wallet_Address) > 0 {
 
+			if x.Miner_Hashrate > 0 {
+				sess := client_list[c]
+				sess.hashrate = x.Miner_Hashrate
+				client_list[c] = sess
+			}
+
+			var NewHashRate float64
+			for _, s := range client_list {
+				NewHashRate += s.hashrate
+			}
+			Hashrate = NewHashRate
+
+			// Update miners information
+			return
+		} else {
+			go SendToDaemon(data)
+			fmt.Printf("%v Submitting result from miner: %v, Wallet: %v\n", time.Now().Format(time.Stamp), c.RemoteAddr().String(), client_list[c].address.String())
+		}
 	})
 
 	u.OnClose(func(c *websocket.Conn, err error) {
