@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"github.com/arodd/qrand"
 	"math/big"
+	mrand "math/rand"
 	"net/http"
 	"os"
 	"runtime"
@@ -133,21 +134,24 @@ var fillRandom bool = true
 
 func GetRandomByte(bytes int) ([]byte, error) {
 	var err error
-
+	random_data_lock.Lock()
+	defer random_data_lock.Unlock()
 	picked_data := make([]byte, bytes)
 	if len(MyRandomData) > bytes {
-		random_data_lock.Lock()
+
 		picked_data = MyRandomData[len(MyRandomData)-bytes:]
 		MyRandomData = MyRandomData[:len(MyRandomData)-bytes]
-		random_data_lock.Unlock()
+
 	} else {
-		err = errors.New("Error Retrieving Random Bytes from Cache")
+		err = errors.New("Error Retrieving Random Bytes from Cache fallback directly to random source")
+		_, err = rand.Read(picked_data)
+		if err != nil {
+			mrand.Read(picked_data)
+		}
 	}
 	return picked_data, err
 }
-
 func RandomGenerator(config *config.ProxyConfig) {
-
 	fmt.Print("Generating random data...\n")
 	for {
 		if len(MyRandomData) < 8192 || fillRandom {
@@ -161,9 +165,17 @@ func RandomGenerator(config *config.ProxyConfig) {
 				if err != nil {
 					fmt.Printf("Error when fetching quantum random data, falling back to crypto rand: %s\n", err.Error())
 					byte_size, err = rand.Read(newdata[:])
+					if err != nil {
+						fmt.Printf("Error when fetching crypto/rand random data falling back to math/rand: %s\n", err.Error())
+						byte_size, err = mrand.Read(newdata[:])
+					}
 				}
 			} else {
 				byte_size, err = rand.Read(newdata[:])
+				if err != nil {
+					fmt.Printf("Error when fetching crypto/rand random data falling back to math/rand: %s\n", err.Error())
+					byte_size, err = mrand.Read(newdata[:])
+				}
 			}
 			if err == nil {
 				random_data_lock.Lock()
@@ -181,10 +193,9 @@ func RandomGenerator(config *config.ProxyConfig) {
 			}
 		} else {
 			// fmt.Print("Sleeping\n")
-			time.Sleep(time.Second * 5)
+			time.Sleep(time.Millisecond * 500)
 		}
 	}
-
 }
 
 func GetGlobalWork() work_template {
