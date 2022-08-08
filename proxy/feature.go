@@ -28,9 +28,9 @@ func edit_blob(input []byte, miner [32]byte, client_data work_template) (output 
 	}
 
 	// Insert miner address
-	if !mbl.Final {
+	/*if !mbl.Final {
 		copy(mbl.KeyHash[:], miner[:])
-	}
+	}*/
 
 	// Insert random nonce
 	if proxyConfig.NonceEdit {
